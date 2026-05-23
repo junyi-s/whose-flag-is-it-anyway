@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 1 (in progress)
+> **Active phase:** Phase 2 (in progress)
 > **Last updated:** 2026-05-22
 > **Updated by:** Claude Sonnet 4.6
 
@@ -78,7 +78,7 @@ _(executor adds notes here as needed)_
 - [x] Re-export everything from `packages/shared/src/index.ts`
 - [x] Verify: `pnpm -r build` passes
 - [x] Verify: `import { Player, Game, GameSettings } from '@whose-flag/shared'` works in both apps
-- [~] Commit
+- [x] Commit
 
 ### Notes
 
@@ -87,29 +87,29 @@ _(executor adds notes here as needed)_
 ## Phase 2 — Server: Room Management
 
 > **Goal:** In-memory room creation, joining, reconnection via Socket.io.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-2): server room management`
 
 ### Tasks
 
-- [ ] Install in `apps/server`: `socket.io`, `cors`, `uuid`, `dotenv`
-- [ ] Wire Socket.io to Express
-- [ ] Add CORS config reading `CORS_ORIGIN` env
-- [ ] Create `src/utils/logger.ts` (basic console wrapper)
-- [ ] Create `src/game/codeGenerator.ts` — generate unique 4-letter codes (charset from constants)
-- [ ] Create `src/game/GameRoom.ts` — class wrapping one Game's mutable state
-- [ ] Create `src/game/roomManager.ts` — singleton Map<RoomCode, GameRoom>
-- [ ] Create `src/socket/handlers.ts` — register all socket handlers
-- [ ] Implement `room:create` (with validation)
-- [ ] Implement `room:join` (validates room exists, name uniqueness, max players)
-- [ ] Implement `room:rejoin` (matches by playerId from localStorage)
-- [ ] Implement `room:leave`
-- [ ] Disconnect handling: mark `isConnected: false`, do not remove player
-- [ ] Emit `game:updated` on any state change
-- [ ] Emit `player:joined`, `player:left`, `player:reconnected`
-- [ ] Validate every inbound payload with Zod, emit `error` on failure
-- [ ] Verify: write a manual socket.io-client script that creates + joins + rejoins
-- [ ] Commit
+- [x] Install in `apps/server`: `socket.io`, `cors`, `uuid`, `dotenv`
+- [x] Wire Socket.io to Express
+- [x] Add CORS config reading `CORS_ORIGIN` env
+- [x] Create `src/utils/logger.ts` (basic console wrapper)
+- [x] Create `src/game/codeGenerator.ts` — generate unique 4-letter codes (charset from constants)
+- [x] Create `src/game/GameRoom.ts` — class wrapping one Game's mutable state
+- [x] Create `src/game/roomManager.ts` — singleton Map<RoomCode, GameRoom>
+- [x] Create `src/socket/handlers.ts` — register all socket handlers
+- [x] Implement `room:create` (with validation)
+- [x] Implement `room:join` (validates room exists, name uniqueness, max players)
+- [x] Implement `room:rejoin` (matches by playerId from localStorage)
+- [x] Implement `room:leave`
+- [x] Disconnect handling: mark `isConnected: false`, do not remove player
+- [x] Emit `game:updated` on any state change
+- [x] Emit `player:joined`, `player:left`, `player:reconnected`
+- [x] Validate every inbound payload with Zod, emit `error` on failure
+- [x] Verify: write a manual socket.io-client script that creates + joins + rejoins
+- [~] Commit
 
 ### Notes
 
