@@ -1,13 +1,20 @@
 import type { Server, Socket } from 'socket.io'
 import {
+  FlagsImportSchema,
+  FlagsSubmitSchema,
+  MAX_FLAG_LENGTH,
+  MIN_FLAG_LENGTH,
+  MIN_PLAYERS,
   RoomCreateSchema,
   RoomJoinSchema,
   RoomRejoinSchema,
   SettingsUpdateSchema,
+  VoteCastSchema,
   type ClientToServerEvents,
   type ServerToClientEvents,
 } from '@whose-flag/shared'
 import { roomManager } from '../game/roomManager.js'
+import { buildRounds, computeScoreDeltas, makeFlag, nextRoundIndex, randomShuffleFlags } from '../game/GameEngine.js'
 import { logger } from '../utils/logger.js'
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>
@@ -15,6 +22,12 @@ type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>
 
 function emitError(socket: AppSocket, code: string, message: string): void {
   socket.emit('error', { code, message })
+}
+
+// Always call cb so acknowledgement promises resolve on the client
+function fail<T>(socket: AppSocket, cb: (r: T) => void, code: string, message: string): void {
+  emitError(socket, code, message)
+  cb({} as T)
 }
 
 function broadcastGameUpdate(io: AppServer, roomCode: string): void {
@@ -53,22 +66,10 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const { code, playerName, avatar } = result.data
     const room = roomManager.get(code)
 
-    if (!room) {
-      emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`)
-      return
-    }
-    if (room.game.status !== 'LOBBY') {
-      emitError(socket, 'GAME_IN_PROGRESS', 'Game has already started')
-      return
-    }
-    if (room.isFull()) {
-      emitError(socket, 'ROOM_FULL', 'Room is full')
-      return
-    }
-    if (room.isNameTaken(playerName)) {
-      emitError(socket, 'NAME_TAKEN', 'That name is already taken in this room')
-      return
-    }
+    if (!room) { emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
+    if (room.game.status !== 'LOBBY') { emitError(socket, 'GAME_IN_PROGRESS', 'Game has already started'); return }
+    if (room.isFull()) { emitError(socket, 'ROOM_FULL', 'Room is full'); return }
+    if (room.isNameTaken(playerName)) { emitError(socket, 'NAME_TAKEN', 'That name is already taken'); return }
 
     const player = room.addPlayer(playerName, avatar)
     void socket.join(code)
@@ -91,14 +92,8 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const { code, playerId } = result.data
     const room = roomManager.get(code)
 
-    if (!room) {
-      emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`)
-      return
-    }
-    if (!room.hasPlayer(playerId)) {
-      emitError(socket, 'PLAYER_NOT_FOUND', 'Player ID not found in this room')
-      return
-    }
+    if (!room) { emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
+    if (!room.hasPlayer(playerId)) { emitError(socket, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
 
     room.setConnected(playerId, true)
     void socket.join(code)
@@ -120,29 +115,192 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   // ─── settings:update ───
   socket.on('settings:update', (payload, cb) => {
     const result = SettingsUpdateSchema.safeParse(payload)
-    if (!result.success) {
-      emitError(socket, 'VALIDATION_ERROR', result.error.message)
-      return
-    }
-    const { roomCode, playerId } = socket.data
-    if (!roomCode || !playerId) {
-      emitError(socket, 'NOT_IN_ROOM', 'You are not in a room')
-      return
-    }
-    const room = roomManager.get(roomCode)
-    if (!room) return
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
 
-    if (room.game.hostId !== playerId) {
-      emitError(socket, 'NOT_HOST', 'Only the host can change settings')
-      return
-    }
-    if (room.game.status !== 'LOBBY') {
-      emitError(socket, 'GAME_IN_PROGRESS', 'Cannot change settings after game starts')
-      return
-    }
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can change settings'); return }
+    if (room.game.status !== 'LOBBY') { fail(socket, cb, 'WRONG_STATE', 'Cannot change settings after game starts'); return }
 
     room.updateSettings(result.data.settings)
     broadcastGameUpdate(io, roomCode)
+    cb({})
+  })
+
+  // ─── flags:submit ───
+  socket.on('flags:submit', (payload, cb) => {
+    const result = FlagsSubmitSchema.safeParse(payload)
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
+
+    const flags = result.data.flags.map((text) => makeFlag(text, playerId))
+    const accepted = room.addFlags(playerId, flags)
+
+    io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
+    broadcastGameUpdate(io, roomCode)
+    cb({ accepted })
+  })
+
+  // ─── flags:import ───
+  socket.on('flags:import', (payload, cb) => {
+    const result = FlagsImportSchema.safeParse(payload)
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
+
+    const lines = result.data.text.split('\n')
+    const valid: string[] = []
+    const rejected: string[] = []
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (trimmed.length >= MIN_FLAG_LENGTH && trimmed.length <= MAX_FLAG_LENGTH) {
+        valid.push(trimmed)
+      } else if (trimmed.length > 0) {
+        rejected.push(trimmed)
+      }
+    }
+
+    const flags = valid.map((text) => makeFlag(text, playerId))
+    const accepted = room.addFlags(playerId, flags)
+
+    io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
+    broadcastGameUpdate(io, roomCode)
+    cb({ accepted, rejected })
+  })
+
+  // ─── game:start ───
+  socket.on('game:start', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can start the game'); return }
+
+    if (room.game.status === 'LOBBY') {
+      room.game.status = 'SUBMITTING'
+      broadcastGameUpdate(io, roomCode)
+      cb({})
+      return
+    }
+
+    if (room.game.status === 'SUBMITTING') {
+      if (room.playerCount < MIN_PLAYERS) { fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return }
+      if (!room.allPlayersHaveMinFlags()) { fail(socket, cb, 'NOT_ENOUGH_FLAGS', `All players need ≥${room.game.settings.minFlagsPerPlayer} flags`); return }
+
+      room.game.status = 'GENERATING'
+      broadcastGameUpdate(io, roomCode)
+
+      const ordered = randomShuffleFlags(room.game.flags)
+      const rounds = buildRounds(ordered)
+      room.setRounds(rounds)
+      room.game.status = 'PLAYING'
+      room.game.currentRoundIndex = 0
+      if (room.game.rounds[0]) room.game.rounds[0].startedAt = Date.now()
+
+      broadcastGameUpdate(io, roomCode)
+      if (room.game.rounds[0]) io.to(roomCode).emit('round:started', { round: room.game.rounds[0] })
+      cb({})
+      return
+    }
+
+    fail(socket, cb, 'WRONG_STATE', 'Cannot start game in current state')
+  })
+
+  // ─── round:next ───
+  socket.on('round:next', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can advance'); return }
+    if (room.game.status !== 'PLAYING') { fail(socket, cb, 'WRONG_STATE', 'Game not in PLAYING state'); return }
+
+    const next = nextRoundIndex(room.game)
+    if (next === null) {
+      room.game.status = 'FINAL_RESULTS'
+      broadcastGameUpdate(io, roomCode)
+      io.to(roomCode).emit('game:ended', { finalScores: { ...room.game.scores } })
+      cb({})
+      return
+    }
+
+    room.game.currentRoundIndex = next
+    const round = room.game.rounds[next]!
+    round.status = 'PRESENTING'
+    round.startedAt = Date.now()
+
+    broadcastGameUpdate(io, roomCode)
+    io.to(roomCode).emit('round:started', { round })
+    cb({})
+  })
+
+  // ─── round:openVoting ───
+  socket.on('round:openVoting', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can open voting'); return }
+
+    const round = room.game.rounds[room.game.currentRoundIndex]
+    if (!round || round.status !== 'PRESENTING') { fail(socket, cb, 'WRONG_STATE', 'Round not in PRESENTING state'); return }
+
+    round.status = 'VOTING'
+    round.votingEndsAt = Date.now() + room.game.settings.votingTimeSeconds * 1000
+    broadcastGameUpdate(io, roomCode)
+
+    setTimeout(() => {
+      const r = roomManager.get(roomCode)
+      if (!r) return
+      const cr = r.game.rounds[r.game.currentRoundIndex]
+      if (cr?.status === 'VOTING') revealRound(io, r.game.code)
+    }, room.game.settings.votingTimeSeconds * 1000)
+
+    cb({})
+  })
+
+  // ─── vote:cast ───
+  socket.on('vote:cast', (payload, cb) => {
+    const result = VoteCastSchema.safeParse(payload)
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+
+    const round = room.game.rounds[room.game.currentRoundIndex]
+    if (!round || round.status !== 'VOTING') { fail(socket, cb, 'WRONG_STATE', 'Voting is not open'); return }
+
+    const flag = room.game.flags[round.redFlag.id]
+    if (flag?.authorId === playerId) { fail(socket, cb, 'CANNOT_VOTE_OWN', 'Cannot vote for your own flag'); return }
+
+    round.votes[playerId] = result.data.guessedPlayerId
+    io.to(roomCode).emit('round:vote', { voterId: playerId })
+    broadcastGameUpdate(io, roomCode)
+    cb({})
+  })
+
+  // ─── round:reveal ───
+  socket.on('round:reveal', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can reveal'); return }
+
+    revealRound(io, roomCode)
     cb({})
   })
 
@@ -150,6 +308,21 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   socket.on('disconnect', () => {
     handleDisconnect(io, socket)
   })
+}
+
+function revealRound(io: AppServer, roomCode: string): void {
+  const room = roomManager.get(roomCode)
+  if (!room) return
+
+  const round = room.game.rounds[room.game.currentRoundIndex]
+  if (!round || round.status === 'REVEAL' || round.status === 'SCOREBOARD') return
+
+  round.status = 'REVEAL'
+  const deltas = computeScoreDeltas(round, room.game.flags, room.game.settings)
+  room.applyScoreDeltas(deltas)
+
+  broadcastGameUpdate(io, roomCode)
+  io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas })
 }
 
 function handleDisconnect(io: AppServer, socket: AppSocket): void {
@@ -165,14 +338,12 @@ function handleDisconnect(io: AppServer, socket: AppSocket): void {
   io.to(roomCode).emit('player:left', { playerId })
   broadcastGameUpdate(io, roomCode)
 
-  // If all players gone, clean up after a grace period
   const allGone = Object.values(room.game.players).every((p) => !p.isConnected)
   if (allGone) {
     setTimeout(() => {
       const r = roomManager.get(roomCode)
       if (!r) return
-      const stillAllGone = Object.values(r.game.players).every((p) => !p.isConnected)
-      if (stillAllGone) {
+      if (Object.values(r.game.players).every((p) => !p.isConnected)) {
         roomManager.delete(roomCode)
         logger.info(`Room ${roomCode} destroyed (all players gone)`)
       }

@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 2 (in progress)
+> **Active phase:** Phase 3 (in progress)
 > **Last updated:** 2026-05-22
 > **Updated by:** Claude Sonnet 4.6
 
@@ -109,7 +109,7 @@ _(executor adds notes here as needed)_
 - [x] Emit `player:joined`, `player:left`, `player:reconnected`
 - [x] Validate every inbound payload with Zod, emit `error` on failure
 - [x] Verify: write a manual socket.io-client script that creates + joins + rejoins
-- [~] Commit
+- [x] Commit
 
 ### Notes
 
@@ -118,29 +118,29 @@ _(executor adds notes here as needed)_
 ## Phase 3 — Server: Flag Submission & Game Flow
 
 > **Goal:** Players submit flags; host starts game; rounds advance; scoring works.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-3): server flag submission and round flow`
 
 ### Tasks
 
-- [ ] Implement `flags:submit` (validate length, count, store on Player)
-- [ ] Implement `flags:import` (parse text body, one flag per line, trim/dedupe)
-- [ ] Implement `settings:update` (host only, lobby state only)
-- [ ] Create `src/game/GameEngine.ts` with pure functions:
-  - [ ] `computeScoreDeltas(round, flags)` → `Record<PlayerId, number>`
-  - [ ] `nextRoundIndex(game)` → number | null
-  - [ ] `randomShuffleFlags(flags)` → ordered list (fallback when LLM off)
-- [ ] Implement `game:start` (host only; min players; min flags/player; transition LOBBY→SUBMITTING or SUBMITTING→GENERATING)
-- [ ] Implement `round:next` (host; advances round, sets status PRESENTING)
-- [ ] Implement `round:openVoting` (host; status → VOTING; sets `votingEndsAt`)
-- [ ] Implement `vote:cast` (only during VOTING; can't vote own flag; overwrites prior vote)
-- [ ] Implement `round:reveal` (host or auto on timer; computes deltas, updates scores, status → REVEAL)
-- [ ] Auto-reveal timer using `setTimeout` when voting opens
-- [ ] After last round → emit `game:ended`, status → FINAL_RESULTS
-- [ ] Emit all server→client events from Plan §5
-- [ ] Verify: scoring matches Plan §9 Phase 3 (correct guess + fool bonus)
-- [ ] Verify: full game playable via socket script with shuffle (no LLM yet)
-- [ ] Commit
+- [x] Implement `flags:submit` (validate length, count, store on Player)
+- [x] Implement `flags:import` (parse text body, one flag per line, trim/dedupe)
+- [x] Implement `settings:update` (host only, lobby state only)
+- [x] Create `src/game/GameEngine.ts` with pure functions:
+  - [x] `computeScoreDeltas(round, flags)` → `Record<PlayerId, number>`
+  - [x] `nextRoundIndex(game)` → number | null
+  - [x] `randomShuffleFlags(flags)` → ordered list (fallback when LLM off)
+- [x] Implement `game:start` (host only; min players; min flags/player; transition LOBBY→SUBMITTING or SUBMITTING→GENERATING)
+- [x] Implement `round:next` (host; advances round, sets status PRESENTING)
+- [x] Implement `round:openVoting` (host; status → VOTING; sets `votingEndsAt`)
+- [x] Implement `vote:cast` (only during VOTING; can't vote own flag; overwrites prior vote)
+- [x] Implement `round:reveal` (host or auto on timer; computes deltas, updates scores, status → REVEAL)
+- [x] Auto-reveal timer using `setTimeout` when voting opens
+- [x] After last round → emit `game:ended`, status → FINAL_RESULTS
+- [x] Emit all server→client events from Plan §5
+- [x] Verify: scoring matches Plan §9 Phase 3 (correct guess + fool bonus)
+- [x] Verify: full game playable via socket script with shuffle (no LLM yet)
+- [~] Commit
 
 ### Notes
 

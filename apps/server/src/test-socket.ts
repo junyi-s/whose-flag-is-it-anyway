@@ -13,7 +13,7 @@ async function run() {
     socketA.emit('room:create', {
       playerName: 'Alice',
       avatar: { emoji: '🦊', bgColor: '#FF5733' },
-    }, (res) => resolve(res as { code: string; playerId: string; game: unknown }))
+    }, (res: { code: string; playerId: string; game: unknown }) => resolve(res))
     setTimeout(() => reject(new Error('timeout')), 3000)
   })
   console.log(`✓ Room created: ${code}, host: ${hostId}`)
@@ -30,8 +30,8 @@ async function run() {
       code,
       playerName: 'Bob',
       avatar: { emoji: '🐻', bgColor: '#3498DB' },
-    }, (res) => {
-      const r = res as { playerId: string; game: { players: Record<string, unknown> } }
+    }, (res: { playerId: string; game: { players: Record<string, unknown> } }) => {
+      const r = res
       console.log(`✓ Bob joined: ${r.playerId}, players: ${Object.keys(r.game.players).length}`)
     })
   })
@@ -47,8 +47,8 @@ async function run() {
   await new Promise(r => setTimeout(r, 200))
 
   const socketA2 = io(URL, { autoConnect: true })
-  socketA2.emit('room:rejoin', { code, playerId: hostId }, (res) => {
-    const r = res as { game: { players: Record<string, { isConnected: boolean }> } }
+  socketA2.emit('room:rejoin', { code, playerId: hostId }, (res: { game: { players: Record<string, { isConnected: boolean }> } }) => {
+    const r = res
     const host = r.game.players[hostId]
     console.log(`✓ Rejoin success, isConnected: ${host?.isConnected ?? '?'}`)
   })
