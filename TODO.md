@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 0 (in progress)
+> **Active phase:** Phase 1 (in progress)
 > **Last updated:** 2026-05-22
 > **Updated by:** Claude Sonnet 4.6
 
@@ -55,7 +55,7 @@ All preflight decisions resolved. Proceed to Phase 0.
 - [x] Verify: `pnpm dev` boots both
 - [x] Verify: `localhost:5173` shows "Red Flags" placeholder
 - [x] Verify: `GET localhost:3001/health` → `200 { ok: true }`
-- [~] Commit
+- [x] Commit
 
 ### Notes
 _(executor adds notes here as needed)_
@@ -65,20 +65,20 @@ _(executor adds notes here as needed)_
 ## Phase 1 — Shared Types & Schemas
 
 > **Goal:** All types from Plan §4 + §5 defined and exported from `packages/shared`.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-1): shared types and schemas`
 
 ### Tasks
 
-- [ ] Create `packages/shared/src/types.ts` with **all** interfaces from Plan §4 verbatim
-- [ ] Create `packages/shared/src/events.ts` with payload types from Plan §5
-- [ ] Create `packages/shared/src/constants.ts` with values from Plan §9 Phase 1
-- [ ] Install `zod` in `packages/shared`
-- [ ] Create `packages/shared/src/schemas.ts` — Zod schemas for every inbound socket event
-- [ ] Re-export everything from `packages/shared/src/index.ts`
-- [ ] Verify: `pnpm -r build` passes
-- [ ] Verify: `import { Player, Game, GameSettings } from '@whose-flag/shared'` works in both apps
-- [ ] Commit
+- [x] Create `packages/shared/src/types.ts` with **all** interfaces from Plan §4 verbatim
+- [x] Create `packages/shared/src/events.ts` with payload types from Plan §5
+- [x] Create `packages/shared/src/constants.ts` with values from Plan §9 Phase 1
+- [x] Install `zod` in `packages/shared`
+- [x] Create `packages/shared/src/schemas.ts` — Zod schemas for every inbound socket event
+- [x] Re-export everything from `packages/shared/src/index.ts`
+- [x] Verify: `pnpm -r build` passes
+- [x] Verify: `import { Player, Game, GameSettings } from '@whose-flag/shared'` works in both apps
+- [~] Commit
 
 ### Notes
 
