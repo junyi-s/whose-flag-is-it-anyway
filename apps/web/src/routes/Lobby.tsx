@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../components/ui/Button'
@@ -14,6 +14,13 @@ export function Lobby() {
   const [showSettings, setShowSettings] = useState(false)
   const [starting, setStarting] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!game || !code) return
+    if (game.status === 'SUBMITTING' || game.status === 'GENERATING') navigate(`/submit/${code}`)
+    if (game.status === 'PLAYING') navigate(`/game/${code}`)
+    if (game.status === 'FINAL_RESULTS') navigate(`/results/${code}`)
+  }, [game?.status, code, navigate])
 
   if (!game || !code) return <LoadingScreen />
 

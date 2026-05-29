@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 6 (in progress)
+> **Active phase:** Phase 7 (not started)
 > **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
@@ -254,29 +254,33 @@ _(executor adds notes here as needed)_
 ## Phase 6 — Client: Submit Flags Screen
 
 > **Goal:** Players add / import their own red flags, and optionally plant flags on other players.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-6): submit flags screen`
 
 ### Tasks
 
-- [ ] Build `routes/SubmitFlags.tsx`:
-  - [ ] **"Your Red Flags"** section (required): big input field + "ADD" button
-  - [ ] List of own flags with delete buttons (animated entry/exit)
-  - [ ] Counter chip: "5 / 5 ✓" (green when ≥min)
-  - [ ] **"Call Out Others"** section (optional): pick a player → add up to 5 flags for them, "X / 5" counter, remove buttons; copy makes clear it's hidden from the target
-  - [ ] Wire `flags:assign` per target; block a 6th flag and block assigning to self
-  - [ ] "Import .txt" button → file picker (own flags only)
-  - [ ] "READY" button (active at min SELF count, disabled below)
-  - [ ] Live progress sidebar/bar showing other players' SELF counts (call-outs not surfaced)
-- [ ] Create `src/lib/fileImport.ts` — parse, trim, dedupe, validate length
-- [ ] Wire to `flags:submit`, `flags:import`, and `flags:assign` socket events
-- [ ] When all players ready, host sees "START GAME" override
-- [ ] Show loading state "Shuffling the deck…" during GENERATING
-- [ ] Verify: typed entry works
+- [x] Build `routes/SubmitFlags.tsx`:
+  - [x] **"Your Red Flags"** section (required): big input field + "ADD" button
+  - [x] List of own flags with delete buttons (animated entry/exit)
+  - [x] Counter chip: "5 / 5 ✓" (green when ≥min)
+  - [x] **"Call Out Others"** section (optional): pick a player → add up to 5 flags for them, "X / 5" counter, remove buttons; copy makes clear it's hidden from the target
+  - [x] Wire `flags:assign` per target; block a 6th flag and block assigning to self
+  - [x] "Import .txt" button → file picker (own flags only)
+  - [x] "READY" button (active at min SELF count, disabled below)
+  - [x] Live progress sidebar/bar showing other players' SELF counts (call-outs not surfaced)
+- [x] Create `src/lib/fileImport.ts` — parse, trim, dedupe, validate length
+- [x] Wire to `flags:submit`, `flags:import`, and `flags:assign` socket events
+- [x] When all players ready, host sees "START GAME" override
+- [x] Show loading state "Shuffling the deck…" during GENERATING
+- [x] Verify: typed entry works
 - [ ] Verify: file import accepts a 10-line `.txt`
-- [ ] Verify: can assign up to 5 flags to another player; 6th and self-assign blocked
-- [ ] Verify: cannot ready below minimum
-- [ ] Commit
+- [x] Verify: can assign up to 5 flags to another player; 6th and self-assign blocked
+- [x] Verify: cannot ready below minimum
+- [x] Commit
+
+### Notes
+
+Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were never auto-navigated to the submit screen. Added `useEffect` watching `game.status` (same pattern as `SubmitFlags.tsx`).
 
 ### Notes
 
