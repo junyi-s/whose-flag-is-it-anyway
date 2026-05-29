@@ -14,9 +14,16 @@ import {
   type Round,
   type RoomCode,
 } from '@whose-flag/shared'
+import { LLM_ROOM_CALL_LIMIT, LLM_ROOM_COOLDOWN_MS } from '../config.js'
 
 export class GameRoom {
   readonly game: Game
+
+  // ─── Server-only state (never snapshotted) ────────────────────────────
+  /** Per-player secrets used to authenticate room:rejoin. Never in game snapshot. */
+  private rejoinSecrets = new Map<PlayerId, string>()
+  private llmCallCount = 0
+  private lastGeneratingAt = 0
 
   constructor(code: RoomCode, hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>) {
     const hostId = uuidv4()
@@ -41,6 +48,7 @@ export class GameRoom {
       scores: { [hostId]: 0 },
       createdAt: Date.now(),
     }
+    this.rejoinSecrets.set(hostId, uuidv4())
   }
 
   get playerCount(): number {
@@ -61,7 +69,7 @@ export class GameRoom {
     )
   }
 
-  addPlayer(name: string, avatar: AvatarConfig): Player {
+  addPlayer(name: string, avatar: AvatarConfig): { player: Player; secret: string } {
     const player: Player = {
       id: uuidv4(),
       name,
@@ -72,7 +80,18 @@ export class GameRoom {
     }
     this.game.players[player.id] = player
     this.game.scores[player.id] = 0
-    return player
+    const secret = uuidv4()
+    this.rejoinSecrets.set(player.id, secret)
+    return { player, secret }
+  }
+
+  getSecret(playerId: PlayerId): string | undefined {
+    return this.rejoinSecrets.get(playerId)
+  }
+
+  verifySecret(playerId: PlayerId, secret: string): boolean {
+    const stored = this.rejoinSecrets.get(playerId)
+    return stored !== undefined && stored === secret
   }
 
   setConnected(playerId: PlayerId, connected: boolean): void {
@@ -173,4 +192,26 @@ export class GameRoom {
   snapshot(): Game {
     return JSON.parse(JSON.stringify(this.game)) as Game
   }
+
+  // ─── LLM abuse guards ─────────────────────────────────────────────────
+
+  /** Returns allowed:true if this room may make another LLM call right now. */
+  canUseLlm(): { allowed: true } | { allowed: false; reason: string } {
+    if (this.llmCallCount >= LLM_ROOM_CALL_LIMIT) {
+      return { allowed: false, reason: `room_cap (${this.llmCallCount}/${LLM_ROOM_CALL_LIMIT})` }
+    }
+    const cooldownRemaining = this.lastGeneratingAt + LLM_ROOM_COOLDOWN_MS - Date.now()
+    if (cooldownRemaining > 0) {
+      return { allowed: false, reason: `cooldown (${Math.ceil(cooldownRemaining / 1000)}s left)` }
+    }
+    return { allowed: true }
+  }
+
+  /** Call immediately before starting a GENERATING transition. */
+  recordLlmCall(): void {
+    this.llmCallCount++
+    this.lastGeneratingAt = Date.now()
+  }
+
+  get llmCalls(): number { return this.llmCallCount }
 }

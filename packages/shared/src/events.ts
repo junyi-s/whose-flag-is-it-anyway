@@ -17,6 +17,7 @@ export interface RoomJoinPayload {
 export interface RoomRejoinPayload {
   code: RoomCode
   playerId: PlayerId
+  secret: string
 }
 
 export interface FlagsSubmitPayload {
@@ -125,11 +126,13 @@ export interface ServerToClientEvents {
 export interface RoomCreateResponse {
   code: RoomCode
   playerId: PlayerId
+  rejoinSecret: string
   game: Game
 }
 
 export interface RoomJoinResponse {
   playerId: PlayerId
+  rejoinSecret: string
   game: Game
 }
 

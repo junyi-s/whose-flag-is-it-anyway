@@ -24,6 +24,10 @@ class RoomManager {
     this.rooms.delete(code)
   }
 
+  size(): number {
+    return this.rooms.size
+  }
+
   activeCodes(): RoomCode[] {
     return [...this.rooms.keys()]
   }

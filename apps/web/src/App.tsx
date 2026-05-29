@@ -45,7 +45,7 @@ function AppInner() {
 
     if (!socket.connected) socket.connect()
 
-    socket.emit('room:rejoin', identity, (res) => {
+    socket.emit('room:rejoin', { code: identity.code, playerId: identity.playerId, secret: identity.secret }, (res) => {
       if (!res.game) {
         clear()
         return

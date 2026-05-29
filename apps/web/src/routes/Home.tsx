@@ -48,7 +48,7 @@ export function Home() {
         if (!res.game) return
         setGame(res.game)
         setPlayerId(res.playerId)
-        save({ playerId: res.playerId, code: res.code })
+        save({ playerId: res.playerId, code: res.code, secret: res.rejoinSecret })
         navigate(`/lobby/${res.code}`)
       },
     )
@@ -67,7 +67,7 @@ export function Home() {
         if (!res.game) return
         setGame(res.game)
         setPlayerId(res.playerId)
-        save({ playerId: res.playerId, code: res.game.code })
+        save({ playerId: res.playerId, code: res.game.code, secret: res.rejoinSecret })
         navigate(`/lobby/${res.game.code}`)
       },
     )

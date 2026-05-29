@@ -625,6 +625,96 @@ DEFAULT_POINTS_FOOLED = 50
 
 ---
 
+### Phase 9.5: Hardening — Abuse Protection & QA
+**Goal:** Make the server safe to expose publicly. The OpenAI key is server-side only (never leaves the server), so the real exposure is **cost abuse and resource exhaustion**, not key theft. Cap LLM spend, bound memory, rate-limit the transport, and stand up a real automated test suite — all *before* the server gets a public URL in Phase 10.
+
+> **Why before Phase 10:** Once the Railway URL is public, anyone can script socket connections. Every `SUBMITTING → GENERATING` transition fires a billable OpenAI call, and nothing currently caps how often that happens, how many rooms can exist, or how many connections a single client can open. This phase closes those holes while the surface is still private.
+
+#### Threat model (what we are defending against)
+| # | Vector | Today | Impact |
+|---|---|---|---|
+| T1 | **Play-Again loop** — host loops SUBMITTING→GENERATING→…→playAgain repeatedly | unbounded | 1 LLM call per loop, no cooldown |
+| T2 | **Parallel rooms** — script N sockets, each creates+starts a room | no `MAX_ROOMS`, no per-IP cap | N concurrent LLM calls |
+| T3 | **Payload inflation** — 20 players × 50 flags × 200 chars | allowed by current limits | ~5× the plan's token estimate per call |
+| T4 | **Connection flood** — open thousands of sockets | no per-IP connection cap | memory exhaustion / DoS |
+| T5 | **Event flood** — spam `vote:cast` / `flags:submit` | no per-socket throttle | CPU + broadcast storm |
+| T6 | **Abandoned rooms** — leave one socket connected forever | rooms only GC'd when *all* disconnect | unbounded memory growth |
+| T7 | **Identity hijack** — `room:rejoin` accepts any `playerId` that exists in the room; UUIDs are broadcast to every client in `game:updated` | accepted as-is | any player can rejoin-as another (incl. host) |
+| T8 | **Prompt injection** — flag text is attacker-controlled, sent to the model | low: `json_object` + Zod + UUID cross-check | worst case cosmetic theme manipulation |
+
+**Tasks:**
+
+*A. LLM cost controls (primary objective)*
+- [ ] `GameRoom.llmCallCount` — increment on every `orderFlags` call; cap per room (default 20). Past cap → skip LLM, use `randomShuffleFlags`. (defends T1)
+- [ ] Per-room start cooldown — min seconds between `GENERATING` transitions (default 10s); reject early starts with `WRONG_STATE`. (defends T1)
+- [ ] Global concurrency semaphore in `questionGen` — max N in-flight OpenAI calls (default 3); excess immediately falls back to shuffle (degrade, don't queue). (defends T2)
+- [ ] Global LLM budget — token-bucket of calls/minute + a daily ceiling (env `LLM_DAILY_CALL_LIMIT`); over budget → shuffle + warn. (defends T1, T2)
+- [ ] Explicit input guard — if total flags > `LLM_MAX_FLAGS` (default 300), skip LLM and shuffle; log it. (defends T3)
+
+*B. Connection & room abuse*
+- [ ] `MAX_ROOMS` global cap in `roomManager.create`; reject `room:create` with a clear error when exceeded. (defends T2, T4)
+- [ ] Per-IP room-creation rate limit (e.g. 5 / 10 min), keyed on `socket.handshake.address`. (defends T2)
+- [ ] Per-IP concurrent-connection cap (e.g. 30); reject the handshake past the cap. (defends T4)
+- [ ] Per-socket inbound event throttle — token bucket on `vote:cast`, `flags:submit`, `flags:assign`, `flags:import`; drop + warn over rate. (defends T5)
+- [ ] Idle-room GC — sweep rooms with no state change for `ROOM_IDLE_TTL` (default 30 min) regardless of connection state; hard `ROOM_MAX_LIFETIME` cap. (defends T6)
+
+*C. Transport hardening*
+- [ ] `helmet` middleware for security headers.
+- [ ] `express.json({ limit: '32kb' })` explicit body cap.
+- [ ] Socket.io `maxHttpBufferSize` lowered from 1 MB default to a value sized for our largest legitimate payload (`flags:import`).
+- [ ] `express-rate-limit` on REST routes (`/api/rooms/:code/exists`).
+
+*D. Identity — rejoin secret (resolved: build the secret)*
+- [ ] `GameRoom`: `private rejoinSecrets = new Map<PlayerId, string>()`, populated for host (constructor) and each `addPlayer`. **Lives on `GameRoom`, never on `game`**, so `snapshot()` cannot leak it. Add `getSecret(playerId)` + `verifySecret(playerId, secret)`.
+- [ ] `shared`: `RoomCreateResponse`/`RoomJoinResponse` gain `rejoinSecret: string`; `RoomRejoinPayload` + `RoomRejoinSchema` gain `secret: string`.
+- [ ] Server `room:rejoin`: verify `secret` before `setConnected`; reject with `BAD_SECRET` on mismatch.
+- [ ] Client: `usePersistedIdentity` stores `{ playerId, code, secret }`; `Home.save()` + `App` rejoin thread the secret through. (No UI change.)
+
+*E. QA / automated tests (Vitest, wired to `pnpm test`)*
+- [ ] `GameEngine` unit tests: `computeScoreDeltas` (correct / fooled / wrong-self-vote / assigned-flag self-recognition), `nextRoundIndex`, shuffle integrity.
+- [ ] Validation tests: each Zod schema rejects malformed / oversized payloads.
+- [ ] Rate-limit / budget unit tests: caps trigger fallback, cooldown blocks early start, semaphore degrades gracefully.
+- [ ] Promote the manual `test-phase*.ts` socket scripts into one integration test that plays a full game headlessly.
+- [ ] Root `pnpm test` runs all suites; add to a CI step.
+
+*F. Observability*
+- [ ] Structured log per LLM call: room code, flag count, est. tokens, outcome (ok / fallback-reason).
+- [ ] Counters on `/health`: active rooms, total + in-flight LLM calls, fallbacks, budget remaining.
+
+**Acceptance:**
+- A scripted Play-Again loop fires **at most** the per-room cap of LLM calls, then silently degrades to shuffle — game stays playable.
+- A script opening many rooms in parallel is bounded by `MAX_ROOMS` and the concurrency semaphore; total in-flight OpenAI calls never exceeds the configured max.
+- Connection/event floods are rejected or throttled without crashing the server.
+- Idle rooms are reclaimed; server memory is stable under an abandoned-room soak test.
+- `pnpm test` passes green and covers scoring, validation, and the abuse caps.
+- `/health` reports live counters; every LLM call is logged with its outcome.
+
+**Resolved Decisions (2026-05-29):**
+- **Identity (T7):** ✅ Build a server-only **rejoin secret** (Task D) — never broadcast, required on rejoin. Closes the host-hijack path.
+- **Budget posture:** ✅ **Soft throttle + generous daily ceiling.** Over budget → degrade to `randomShuffleFlags` and warn; never return an error to players. No hard kill-switch.
+- **Caps:** ✅ **Generous tier** (table below). All env-overridable so they can be tightened post-deploy without a code change.
+
+**Configured defaults (generous tier):**
+
+| Constant | Value | Env override | Defends |
+|---|---|---|---|
+| Per-room LLM call cap | 20 | `LLM_ROOM_CALL_LIMIT` | T1 |
+| Per-room start cooldown | 10 s | `LLM_ROOM_COOLDOWN_MS` | T1 |
+| Global concurrency | 3 | `LLM_MAX_CONCURRENT` | T2 |
+| Calls / minute (bucket) | 10 | `LLM_CALLS_PER_MIN` | T1, T2 |
+| Daily call ceiling | 500 | `LLM_DAILY_CALL_LIMIT` | T1, T2 |
+| Max flags / call | 300 | `LLM_MAX_FLAGS` | T3 |
+| `MAX_ROOMS` | 200 | `MAX_ROOMS` | T2, T4 |
+| Per-IP connections | 30 | `MAX_CONNS_PER_IP` | T4 |
+| Per-IP room creation | 5 / 10 min | `ROOM_CREATE_LIMIT` | T2 |
+| Per-socket events | ~30 burst, 5/s refill | `SOCKET_EVENT_BURST` / `_REFILL` | T5 |
+| Idle-room TTL | 30 min | `ROOM_IDLE_TTL_MS` | T6 |
+| Room max lifetime | 6 h | `ROOM_MAX_LIFETIME_MS` | T6 |
+
+Worst-case LLM spend ceiling ≈ **$10/day** (500 calls × ~$0.02 max-size game); typical ≈ $2/day.
+
+---
+
 ### Phase 10: Deployment
 **Goal:** Live URL anyone can play at.
 

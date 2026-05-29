@@ -19,6 +19,10 @@ import { roomManager } from '../game/roomManager.js'
 import { buildRounds, computeScoreDeltas, makeFlag, nextRoundIndex, randomShuffleFlags } from '../game/GameEngine.js'
 import { orderFlags } from '../llm/questionGen.js'
 import { logger } from '../utils/logger.js'
+import { checkRoomCreateLimit } from '../middleware/connectionLimits.js'
+import { allowEvent } from '../middleware/eventThrottle.js'
+import { touchRoom } from '../middleware/roomGc.js'
+import { MAX_ROOMS } from '../config.js'
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>
@@ -36,14 +40,29 @@ function fail<T>(socket: AppSocket, cb: (r: T) => void, code: string, message: s
 function broadcastGameUpdate(io: AppServer, roomCode: string): void {
   const room = roomManager.get(roomCode)
   if (!room) return
+  touchRoom(roomCode)
   io.to(roomCode).emit('game:updated', { game: room.snapshot() })
 }
 
 export function registerHandlers(io: AppServer, socket: AppSocket): void {
+  /** Returns true if the event passes the per-socket rate limit. */
+  function throttled(eventName: string): boolean {
+    return allowEvent(socket.id, socket.data.playerId, eventName)
+  }
+
   // ─── room:create ───
   socket.on('room:create', (payload, cb) => {
     const result = RoomCreateSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    if (roomManager.size() >= MAX_ROOMS) {
+      fail(socket, cb, 'SERVER_FULL', 'Server is at capacity, try again later'); return
+    }
+    const ip = socket.handshake.address
+    if (!checkRoomCreateLimit(ip).allowed) {
+      fail(socket, cb, 'RATE_LIMITED', 'Too many rooms created, please wait'); return
+    }
+
     const { playerName, avatar, settings } = result.data
     const room = roomManager.create(playerName, avatar, settings)
     const hostId = room.game.hostId
@@ -52,8 +71,9 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     socket.data.roomCode = room.game.code
     socket.data.playerId = hostId
 
+    const rejoinSecret = room.getSecret(hostId)!
     logger.info(`Room ${room.game.code} created by ${playerName}`)
-    cb({ code: room.game.code, playerId: hostId, game: room.snapshot() })
+    cb({ code: room.game.code, playerId: hostId, rejoinSecret, game: room.snapshot() })
   })
 
   // ─── room:join ───
@@ -68,7 +88,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (room.isFull()) { fail(socket, cb, 'ROOM_FULL', 'Room is full'); return }
     if (room.isNameTaken(playerName)) { fail(socket, cb, 'NAME_TAKEN', 'That name is already taken'); return }
 
-    const player = room.addPlayer(playerName, avatar)
+    const { player, secret: rejoinSecret } = room.addPlayer(playerName, avatar)
     void socket.join(code)
     socket.data.roomCode = code
     socket.data.playerId = player.id
@@ -76,18 +96,19 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     logger.info(`${playerName} joined room ${code}`)
     socket.to(code).emit('player:joined', { player })
     broadcastGameUpdate(io, code)
-    cb({ playerId: player.id, game: room.snapshot() })
+    cb({ playerId: player.id, rejoinSecret, game: room.snapshot() })
   })
 
   // ─── room:rejoin ───
   socket.on('room:rejoin', (payload, cb) => {
     const result = RoomRejoinSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
-    const { code, playerId } = result.data
+    const { code, playerId, secret } = result.data
     const room = roomManager.get(code)
 
     if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
     if (!room.hasPlayer(playerId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
+    if (!room.verifySecret(playerId, secret)) { fail(socket, cb, 'BAD_SECRET', 'Invalid rejoin secret'); return }
 
     room.setConnected(playerId, true)
     void socket.join(code)
@@ -125,6 +146,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── flags:submit ───
   socket.on('flags:submit', (payload, cb) => {
+    if (!throttled('flags:submit')) { cb({} as never); return }
     const result = FlagsSubmitSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
 
@@ -144,6 +166,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── flags:import ───
   socket.on('flags:import', (payload, cb) => {
+    if (!throttled('flags:import')) { cb({} as never); return }
     const result = FlagsImportSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
 
@@ -175,6 +198,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── flags:assign ───
   socket.on('flags:assign', (payload, cb) => {
+    if (!throttled('flags:assign')) { cb({} as never); return }
     const result = FlagsAssignSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
 
@@ -255,6 +279,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── vote:cast ───
   socket.on('vote:cast', (payload, cb) => {
+    if (!throttled('vote:cast')) { cb({} as never); return }
     const result = VoteCastSchema.safeParse(payload)
     if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
 
@@ -357,7 +382,16 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
   broadcastGameUpdate(io, roomCode)
 
   const flagValues = Object.values(room.game.flags)
-  const llmResult = await orderFlags(flagValues)
+
+  // Check per-room LLM guards (cap + cooldown) before calling the API.
+  // If blocked, we fall through to shuffle — the game stays playable.
+  const llmCheck = room.canUseLlm()
+  if (!llmCheck.allowed) {
+    logger.warn(`[room:${roomCode}] LLM skipped by room guard: ${llmCheck.reason}`)
+  }
+  if (llmCheck.allowed) room.recordLlmCall()
+
+  const llmResult = llmCheck.allowed ? await orderFlags(flagValues, roomCode) : null
 
   let orderedFlags: typeof flagValues
   if (llmResult) {

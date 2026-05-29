@@ -52,6 +52,7 @@ export const RoomJoinSchema = z.object({
 export const RoomRejoinSchema = z.object({
   code: RoomCodeSchema,
   playerId: PlayerIdSchema,
+  secret: z.string().min(1).max(128),
 })
 
 export const FlagsSubmitSchema = z.object({

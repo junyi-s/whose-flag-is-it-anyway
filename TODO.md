@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 9 (in progress)
+> **Active phase:** Phase 10 (not started)
 > **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
@@ -370,6 +370,65 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
 - [ ] Commit
 
 ### Notes
+
+---
+
+## Phase 9.5 — Hardening: Abuse Protection & QA
+
+> **Goal:** Make the server safe to expose publicly. OpenAI key is server-side only — the real risk is **cost abuse / resource exhaustion**, not key theft. Must land before Phase 10 puts a public URL on the server. See `IMPLEMENTATION_PLAN.md` Phase 9.5 for the full threat model (T1–T8).
+> **Phase status:** Complete
+> **Commit message when done:** `feat(phase-9.5): abuse protection and qa hardening`
+
+### Tasks
+
+**A. LLM cost controls (primary)**
+- [x] `GameRoom.llmCallCount` + per-room cap (default 20) → shuffle past cap (T1)
+- [x] Per-room start cooldown (default 10s between GENERATING transitions) (T1)
+- [x] Global concurrency semaphore in `questionGen` (max 3 in-flight) → shuffle on excess (T2)
+- [x] Global LLM budget: calls/min token-bucket + daily ceiling (`LLM_DAILY_CALL_LIMIT`) (T1, T2)
+- [x] Input guard: > `LLM_MAX_FLAGS` (default 300) → skip LLM, shuffle (T3)
+
+**B. Connection & room abuse**
+- [x] `MAX_ROOMS` global cap in `roomManager.create` (T2, T4)
+- [x] Per-IP room-creation rate limit (~5 / 10 min) (T2)
+- [x] Per-IP concurrent-connection cap (~30) (T4)
+- [x] Per-socket inbound event throttle (vote/submit/assign/import) (T5)
+- [x] Idle-room GC (`ROOM_IDLE_TTL` ~30 min) + `ROOM_MAX_LIFETIME` cap (T6)
+
+**C. Transport hardening**
+- [x] `helmet` security headers
+- [x] `express.json({ limit: '32kb' })`
+- [x] Lower Socket.io `maxHttpBufferSize` (128 KB)
+- [x] `express-rate-limit` on REST routes
+
+**D. Identity — rejoin secret (resolved: build it)**
+- [x] `GameRoom.rejoinSecrets` Map (server-only, never snapshotted) + `getSecret`/`verifySecret`
+- [x] shared: create/join responses gain `rejoinSecret`; rejoin payload + schema gain `secret`
+- [x] server `room:rejoin` verifies secret (reject `BAD_SECRET`); client stores+sends it (no UI change)
+
+**E. QA / automated tests (Vitest → `pnpm test`)**
+- [x] `GameEngine` unit tests (scoring all branches, nextRoundIndex, shuffle) — 13 tests
+- [x] Zod validation tests (malformed/oversized payloads rejected) — 24 tests
+- [x] Rate-limit / budget / cooldown / semaphore + rejoin secret unit tests — 15 tests
+- [ ] Promote `test-phase*.ts` scripts → one headless full-game integration test (deferred)
+- [x] Root `pnpm test` runs all suites — 52/52 passing
+
+**F. Observability**
+- [x] Structured per-LLM-call log (room, flag count, timing, outcome) — in `questionGen.ts`
+- [x] `/health` counters: active rooms, active/daily/limit LLM calls, per-minute bucket
+
+### Notes
+
+_(executor adds notes here as needed)_
+
+### Resolved Decisions (2026-05-29)
+
+- **Identity (T7):** ✅ build server-only rejoin secret (Task D)
+- **Budget posture:** ✅ soft throttle + generous daily ceiling; over budget → shuffle, never error
+- **Caps:** ✅ generous tier, all env-overridable. Defaults:
+  - per-room LLM cap **20** · start cooldown **10s** · concurrency **3** · calls/min **10** · daily **500** · max flags/call **300**
+  - MAX_ROOMS **200** · per-IP conns **30** · per-IP room create **5/10min** · per-socket events **~30 burst, 5/s** · idle TTL **30min** · max lifetime **6h**
+  - worst-case LLM ceiling ≈ **$10/day**, typical ≈ $2/day
 
 ---
 
