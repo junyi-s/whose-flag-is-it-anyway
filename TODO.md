@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 7 (not started)
+> **Active phase:** Phase 8 (not started)
 > **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
@@ -289,32 +289,36 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
 ## Phase 7 — Client: Game Screen
 
 > **Goal:** Active gameplay with all 4 round sub-states.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-7): active game screen`
 
 ### Tasks
 
-- [ ] Build `components/RedFlagCard.tsx` — bold card, theme banner above
-- [ ] Build `components/Timer.tsx` — countdown ring/bar, pulses when low
-- [ ] Build `components/VotingPanel.tsx` — grid of player avatars; if YOU authored the flag the whole panel is disabled ("You wrote this one"); otherwise every avatar is enabled **including your own** (never disable self — it would leak the answer)
-- [ ] Build `components/RoundResults.tsx` — animated vote bars; highlight the **subject** (correct answer); for assigned flags also reveal the author ("…and {author} planted it 👀")
-- [ ] Build `components/Scoreboard.tsx` — sorted list with animated `+100` deltas
-- [ ] Build `routes/Game.tsx` — switches sub-view by `currentRound.status`:
-  - [ ] PRESENTING: card with reveal animation, host sees "OPEN VOTING"
-  - [ ] VOTING: card + voting panel + timer
-  - [ ] REVEAL: vote breakdown + correct answer
-  - [ ] SCOREBOARD: leaderboard with deltas, host sees "NEXT FLAG"
-- [ ] Host-only controls; non-host shows "Waiting for host…"
-- [ ] Round counter ("Round 5 / 23")
-- [ ] Framer Motion transitions between sub-views
-- [ ] Sound hook stub (`src/lib/sounds.ts`) — call for vote / reveal / score / win
-- [ ] Verify: end-to-end playable on mobile
-- [ ] Verify: author of a flag cannot vote; everyone else can, self-pick allowed
-- [ ] Verify: reveal shows the subject as the answer + the author for assigned flags
-- [ ] Verify: host controls disabled when not allowed
-- [ ] Commit
+- [x] Build `components/RedFlagCard.tsx` — bold card, theme banner above
+- [x] Build `components/Timer.tsx` — countdown ring/bar, pulses when low
+- [x] Build `components/VotingPanel.tsx` — grid of player avatars; if YOU authored the flag the whole panel is disabled ("You wrote this one"); otherwise every avatar is enabled **including your own** (never disable self — it would leak the answer)
+- [x] Build `components/RoundResults.tsx` — animated vote bars; highlight the **subject** (correct answer); for assigned flags also reveal the author ("…and {author} planted it 👀")
+- [x] Build `components/Scoreboard.tsx` — sorted list with animated `+100` deltas
+- [x] Build `routes/Game.tsx` — switches sub-view by `currentRound.status`:
+  - [x] PRESENTING: card with reveal animation, host sees "OPEN VOTING"
+  - [x] VOTING: card + voting panel + timer
+  - [x] REVEAL: vote breakdown + correct answer
+  - [x] SCOREBOARD: leaderboard with deltas, host sees "NEXT FLAG"
+- [x] Host-only controls; non-host shows "Waiting for host…"
+- [x] Round counter ("Round 5 / 23")
+- [x] Framer Motion transitions between sub-views
+- [x] Sound hook stub (`src/lib/sounds.ts`) — call for vote / reveal / score / win
+- [x] Verify: end-to-end playable on mobile (375/390px, full 11-round game via Playwright)
+- [x] Verify: author of a flag cannot vote; everyone else can, self-pick allowed (author blocked 11/11 rounds)
+- [x] Verify: reveal shows the subject as the answer + the author for assigned flags (planted reveal confirmed)
+- [x] Verify: host controls disabled when not allowed
+- [x] Commit
 
 ### Notes
+
+**Server addition:** `SCOREBOARD` was an unreachable `RoundStatus` — the server flow stopped at `REVEAL`, advanced by `round:next`. Added a minimal host-only `round:scoreboard` event (REVEAL → SCOREBOARD) in `events.ts` + `handlers.ts` so the scoreboard is a real, server-synced beat rather than client-local (which would desync players). `round:next` already works from any PLAYING sub-state, so it needed no change.
+
+**Score deltas:** `gameStore` gained `lastDeltas`, populated by a `round:revealed` listener and cleared on `round:started`, feeding the scoreboard's animated `+N` badges. Scores are applied server-side at REVEAL, so SCOREBOARD shows final totals + the delta badge.
 
 ---
 

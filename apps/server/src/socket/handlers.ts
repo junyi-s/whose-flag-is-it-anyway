@@ -286,6 +286,22 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     cb({})
   })
 
+  // ─── round:scoreboard ───
+  socket.on('round:scoreboard', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can show the scoreboard'); return }
+
+    const round = room.game.rounds[room.game.currentRoundIndex]
+    if (!round || round.status !== 'REVEAL') { fail(socket, cb, 'WRONG_STATE', 'Round not in REVEAL state'); return }
+
+    round.status = 'SCOREBOARD'
+    broadcastGameUpdate(io, roomCode)
+    cb({})
+  })
+
   // ─── disconnect ───
   socket.on('disconnect', () => {
     handleDisconnect(io, socket)

@@ -53,6 +53,7 @@ export interface ClientToServerEvents {
   'game:start': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:next': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:openVoting': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
+  'round:scoreboard': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'vote:cast': (payload: VoteCastPayload, cb: (res: EmptyResponse) => void) => void
   'round:reveal': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'settings:update': (payload: SettingsUpdatePayload, cb: (res: EmptyResponse) => void) => void
