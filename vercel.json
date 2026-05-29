@@ -1,0 +1,6 @@
+{
+  "buildCommand": "pnpm --filter @whose-flag/shared build && pnpm --filter @whose-flag/web build",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": "vite"
+}
