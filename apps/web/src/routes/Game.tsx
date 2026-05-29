@@ -21,7 +21,10 @@ export function Game() {
     if (!game || !code) return
     if (game.status === 'LOBBY') navigate(`/lobby/${code}`)
     else if (game.status === 'SUBMITTING' || game.status === 'GENERATING') navigate(`/submit/${code}`)
-    else if (game.status === 'FINAL_RESULTS') navigate(`/results/${code}`)
+    else if (game.status === 'FINAL_RESULTS') {
+      playSound('win')
+      navigate(`/results/${code}`)
+    }
   }, [game?.status, code, navigate])
 
   if (!game || !playerId || !code) return <LoadingScreen />
@@ -38,7 +41,7 @@ export function Game() {
   return (
     <div className="min-h-screen bg-bg-base flex flex-col">
       {/* Round counter */}
-      <div className="text-center pt-6 pb-2">
+      <div className="text-center pt-6 pb-2" aria-live="polite" aria-atomic="true">
         <span className="text-white/40 text-sm font-black uppercase tracking-widest">
           Round {game.currentRoundIndex + 1} / {game.rounds.length}
         </span>

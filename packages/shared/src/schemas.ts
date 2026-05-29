@@ -81,6 +81,8 @@ export const SettingsUpdateSchema = z.object({
   settings: GameSettingsPartialSchema,
 })
 
+export const GamePlayAgainSchema = z.object({})
+
 // ─── LLM output schema ───
 
 export const LlmOrderingResultSchema = z.object({

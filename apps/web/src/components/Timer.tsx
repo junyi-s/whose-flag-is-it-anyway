@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { playSound } from '../lib/sounds'
 
 interface TimerProps {
   votingEndsAt: number // Unix ms
@@ -8,6 +9,7 @@ interface TimerProps {
 
 export function Timer({ votingEndsAt, totalSeconds }: TimerProps) {
   const [now, setNow] = useState(() => Date.now())
+  const lastTickRef = useRef(-1)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 100)
@@ -16,6 +18,15 @@ export function Timer({ votingEndsAt, totalSeconds }: TimerProps) {
 
   const msLeft = Math.max(0, votingEndsAt - now)
   const secondsLeft = Math.ceil(msLeft / 1000)
+
+  // Tick sound on each whole second change during low-time countdown
+  useEffect(() => {
+    if (secondsLeft <= 5 && secondsLeft > 0 && secondsLeft !== lastTickRef.current) {
+      lastTickRef.current = secondsLeft
+      playSound('tick')
+    }
+  }, [secondsLeft])
+
   const fraction = Math.max(0, Math.min(1, msLeft / (totalSeconds * 1000)))
   const isLow = secondsLeft <= 5
 

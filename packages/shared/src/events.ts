@@ -57,6 +57,7 @@ export interface ClientToServerEvents {
   'vote:cast': (payload: VoteCastPayload, cb: (res: EmptyResponse) => void) => void
   'round:reveal': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'settings:update': (payload: SettingsUpdatePayload, cb: (res: EmptyResponse) => void) => void
+  'game:playAgain': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
 }
 
 // ─── Server → Client event payloads ───

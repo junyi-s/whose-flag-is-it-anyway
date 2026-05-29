@@ -25,8 +25,10 @@ export function RedFlagCard({ text, theme }: RedFlagCardProps) {
         transition={{ type: 'spring', stiffness: 200, damping: 20 }}
         style={{ transformPerspective: 1000 }}
         className="relative bg-gradient-to-br from-brand-red to-brand-pink rounded-3xl p-8 shadow-[0_8px_0_#8B0010] min-h-[12rem] flex items-center justify-center"
+        role="article"
+        aria-label={`Red flag: ${text}`}
       >
-        <span className="absolute top-4 left-5 text-3xl select-none">🚩</span>
+        <span className="absolute top-4 left-5 text-3xl select-none" aria-hidden="true">🚩</span>
         <p className="text-white text-2xl sm:text-3xl font-black text-center leading-snug break-words">
           {text}
         </p>

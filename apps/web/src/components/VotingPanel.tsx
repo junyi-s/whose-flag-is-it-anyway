@@ -36,14 +36,17 @@ export function VotingPanel({ players, myPlayerId, authorId, myVote }: VotingPan
       <p className="text-center text-white/50 text-sm font-bold uppercase tracking-widest mb-4">
         Whose flag is it?
       </p>
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3" role="group" aria-label="Vote for a player">
         {players.map((player) => {
           const selected = myVote === player.id
+          const label = player.id === myPlayerId ? 'You' : player.name
           return (
             <motion.button
               key={player.id}
               onClick={() => handleVote(player.id)}
               whileTap={{ scale: 0.92 }}
+              aria-label={`Vote for ${label}`}
+              aria-pressed={selected}
               className={`flex flex-col items-center gap-1.5 p-2 rounded-2xl border-2 transition-colors ${
                 selected
                   ? 'border-brand-yellow bg-brand-yellow/10'

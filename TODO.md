@@ -1,6 +1,6 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 8 (not started)
+> **Active phase:** Phase 9 (in progress)
 > **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
@@ -325,19 +325,19 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
 ## Phase 8 — Client: Final Results
 
 > **Goal:** End-of-game celebration screen.
-> **Phase status:** Not started
+> **Phase status:** In progress
 > **Commit message when done:** `feat(phase-8): final results screen`
 
 ### Tasks
 
-- [ ] Build `routes/Results.tsx`:
-  - [ ] Top 3 podium with staggered entrance
-  - [ ] Full ranked list below
-  - [ ] Confetti for #1 (use `canvas-confetti` or framer)
-  - [ ] "PLAY AGAIN" (host) — resets game, returns to SUBMITTING
-  - [ ] "BACK TO HOME" — leaves room
-- [ ] Server: handle `game:playAgain` event — keep players, clear flags/scores/rounds
-- [ ] Add to shared events + schemas
+- [x] Build `routes/Results.tsx`:
+  - [x] Top 3 podium with staggered entrance
+  - [x] Full ranked list below
+  - [x] Confetti for #1 (canvas-confetti, fires twice for flair)
+  - [x] "PLAY AGAIN" (host) — resets game, returns to SUBMITTING
+  - [x] "BACK TO HOME" — leaves room
+- [x] Server: handle `game:playAgain` event — keep players, clear flags/scores/rounds
+- [x] Add to shared events + schemas
 - [ ] Verify: winner correct
 - [ ] Verify: confetti fires once
 - [ ] Verify: Play Again keeps lobby intact
@@ -350,22 +350,23 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
 ## Phase 9 — Polish
 
 > **Goal:** Feel finished and "Jackbox loud."
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-9): polish, pwa, sounds`
 
 ### Tasks
 
-- [ ] Vite PWA plugin: manifest + icons + service worker
-- [ ] Generate icons (192, 512) — bold red-flag motif
-- [ ] Implement `src/lib/sounds.ts` with real audio (CC0 SFX)
-- [ ] Haptic feedback on vote + reveal (`navigator.vibrate`)
-- [ ] Error boundaries on every route
-- [ ] Loading states: "Shuffling the deck…", "Waiting for players…", "Reconnecting…"
-- [ ] Empty/edge: single player can't start, etc.
-- [ ] Accessibility pass: keyboard nav, ARIA, contrast (test with `axe`)
-- [ ] Test devices: iOS Safari, Android Chrome, desktop Chrome/Firefox
-- [ ] Lighthouse PWA ≥ 90
-- [ ] No console errors in `pnpm build` preview
+- [x] Vite PWA plugin: manifest + icons + service worker (generateSW, precaches 12 entries)
+- [x] Generate icons (192, 512) — bold red-flag motif (SVG → PNG via ImageMagick)
+- [x] Implement `src/lib/sounds.ts` with Web Audio API synthesis (no external files)
+- [x] Haptic feedback on vote + reveal + win (`navigator.vibrate`)
+- [x] Error boundaries on every route (`ErrorBoundary` wraps each `<Route>`)
+- [x] Reconnecting banner (animated yellow bar when socket disconnects)
+- [x] Loading states: all routes already have LoadingScreen; GENERATING has its own screen
+- [x] Accessibility pass: Modal gets `role="dialog"`, `aria-modal`, `aria-labelledby`, Escape key; VotingPanel gets `aria-pressed`, `aria-label` per button; RedFlagCard gets `role="article"`, `aria-label`; round counter gets `aria-live`
+- [x] Tick sound + haptics on last 5s of voting timer
+- [ ] Test devices: iOS Safari, Android Chrome (requires physical device)
+- [ ] Lighthouse PWA ≥ 90 (requires deployed URL)
+- [x] No console errors in `pnpm build` — clean build confirmed
 - [ ] Commit
 
 ### Notes

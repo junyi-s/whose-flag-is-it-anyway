@@ -3,6 +3,7 @@ import {
   FlagsAssignSchema,
   FlagsImportSchema,
   FlagsSubmitSchema,
+  GamePlayAgainSchema,
   MAX_FLAG_LENGTH,
   MIN_FLAG_LENGTH,
   MIN_PLAYERS,
@@ -298,6 +299,23 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (!round || round.status !== 'REVEAL') { fail(socket, cb, 'WRONG_STATE', 'Round not in REVEAL state'); return }
 
     round.status = 'SCOREBOARD'
+    broadcastGameUpdate(io, roomCode)
+    cb({})
+  })
+
+  // ─── game:playAgain ───
+  socket.on('game:playAgain', (_payload, cb) => {
+    const result = GamePlayAgainSchema.safeParse(_payload)
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can restart'); return }
+    if (room.game.status !== 'FINAL_RESULTS') { fail(socket, cb, 'WRONG_STATE', 'Game not in FINAL_RESULTS state'); return }
+
+    room.resetForPlayAgain()
     broadcastGameUpdate(io, roomCode)
     cb({})
   })
