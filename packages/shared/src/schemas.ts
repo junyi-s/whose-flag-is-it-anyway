@@ -61,7 +61,7 @@ export const FlagsSubmitSchema = z.object({
 })
 
 export const FlagsImportSchema = z.object({
-  text: z.string().max(MAX_FLAG_LENGTH * MAX_FLAGS_PER_PLAYER + MAX_PLAYERS),
+  text: z.string().max((MAX_FLAG_LENGTH + 1) * MAX_FLAGS_PER_PLAYER),
 })
 
 export const VoteCastSchema = z.object({

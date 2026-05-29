@@ -1,7 +1,7 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 3 (in progress)
-> **Last updated:** 2026-05-22
+> **Active phase:** Phase 5 (in progress)
+> **Last updated:** 2026-05-28
 > **Updated by:** Claude Sonnet 4.6
 
 This file tracks implementation progress for `IMPLEMENTATION_PLAN.md`. The executing agent must update this file at the start and end of every task. Do not skip ahead; do not work on multiple phases simultaneously.
@@ -140,7 +140,7 @@ _(executor adds notes here as needed)_
 - [x] Emit all server→client events from Plan §5
 - [x] Verify: scoring matches Plan §9 Phase 3 (correct guess + fool bonus)
 - [x] Verify: full game playable via socket script with shuffle (no LLM yet)
-- [~] Commit
+- [x] Commit
 
 ### Notes
 
@@ -149,28 +149,31 @@ _(executor adds notes here as needed)_
 ## Phase 4 — Server: LLM Integration
 
 > **Goal:** OpenAI orders + themes flags when game starts.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-4): openai flag ordering`
 
 ### Tasks
 
-- [ ] Install `openai` SDK in `apps/server`
-- [ ] Create `src/llm/openai.ts` — singleton OpenAI client reading `OPENAI_API_KEY`
-- [ ] Create `src/llm/prompts.ts` — `SYSTEM_PROMPT` constant + `buildUserPrompt(flags)` fn
-- [ ] Create `src/llm/questionGen.ts` — `orderFlags(flags): Promise<LlmOrderingResult>`
-- [ ] Zod schema for `LlmOrderingResult` in `packages/shared/src/schemas.ts`
-- [ ] On call: `response_format: { type: 'json_object' }`, model from env
-- [ ] 20-second timeout via `AbortController`
-- [ ] One retry on rate-limit (exponential backoff: 2s)
-- [ ] On any failure → fall back to `randomShuffleFlags`, log warning
-- [ ] Call from `game:start` handler when transitioning to GENERATING
-- [ ] Apply ordering: set `theme` and `orderIndex` on each `RedFlag`
-- [ ] Build `Game.rounds` from ordered flags before transitioning to PLAYING
-- [ ] Verify: with valid `OPENAI_API_KEY`, flags get themed
-- [ ] Verify: with invalid key, game still starts with shuffle, warning logged
-- [ ] Commit
+- [x] Install `openai` SDK in `apps/server`
+- [x] Create `src/llm/openai.ts` — singleton OpenAI client reading `OPENAI_API_KEY`
+- [x] Create `src/llm/prompts.ts` — `SYSTEM_PROMPT` constant + `buildUserPrompt(flags)` fn
+- [x] Create `src/llm/questionGen.ts` — `orderFlags(flags): Promise<LlmOrderingResult>`
+- [x] Zod schema for `LlmOrderingResult` in `packages/shared/src/schemas.ts`
+- [x] On call: `response_format: { type: 'json_object' }`, model from env
+- [x] 20-second timeout via `AbortController`
+- [x] One retry on rate-limit (exponential backoff: 2s)
+- [x] On any failure → fall back to `randomShuffleFlags`, log warning
+- [x] Call from `game:start` handler when transitioning to GENERATING
+- [x] Apply ordering: set `theme` and `orderIndex` on each `RedFlag`
+- [x] Build `Game.rounds` from ordered flags before transitioning to PLAYING
+- [ ] Verify: with valid `OPENAI_API_KEY`, flags get themed (needs real key — skip to Phase 5, verify during Phase 10 deployment)
+- [x] Verify: with invalid key, game still starts with shuffle, warning logged
+- [x] Commit
 
 ### Notes
+
+Static analysis fix: `FlagsImportSchema` text max was `MAX_FLAG_LENGTH * MAX_FLAGS_PER_PLAYER + MAX_PLAYERS` (10020), too small by 29 chars for a max-size import. Fixed to `(MAX_FLAG_LENGTH + 1) * MAX_FLAGS_PER_PLAYER` (10050).
+Valid-key LLM path deferred to Phase 10 deployment verification (no `OPENAI_API_KEY` in local env).
 
 ---
 

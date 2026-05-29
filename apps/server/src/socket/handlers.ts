@@ -15,6 +15,7 @@ import {
 } from '@whose-flag/shared'
 import { roomManager } from '../game/roomManager.js'
 import { buildRounds, computeScoreDeltas, makeFlag, nextRoundIndex, randomShuffleFlags } from '../game/GameEngine.js'
+import { orderFlags } from '../llm/questionGen.js'
 import { logger } from '../utils/logger.js'
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>
@@ -181,40 +182,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── game:start ───
   socket.on('game:start', (_payload, cb) => {
-    const { roomCode, playerId } = socket.data
-    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
-    const room = roomManager.get(roomCode)
-    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
-    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can start the game'); return }
-
-    if (room.game.status === 'LOBBY') {
-      room.game.status = 'SUBMITTING'
-      broadcastGameUpdate(io, roomCode)
-      cb({})
-      return
-    }
-
-    if (room.game.status === 'SUBMITTING') {
-      if (room.playerCount < MIN_PLAYERS) { fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return }
-      if (!room.allPlayersHaveMinFlags()) { fail(socket, cb, 'NOT_ENOUGH_FLAGS', `All players need ≥${room.game.settings.minFlagsPerPlayer} flags`); return }
-
-      room.game.status = 'GENERATING'
-      broadcastGameUpdate(io, roomCode)
-
-      const ordered = randomShuffleFlags(room.game.flags)
-      const rounds = buildRounds(ordered)
-      room.setRounds(rounds)
-      room.game.status = 'PLAYING'
-      room.game.currentRoundIndex = 0
-      if (room.game.rounds[0]) room.game.rounds[0].startedAt = Date.now()
-
-      broadcastGameUpdate(io, roomCode)
-      if (room.game.rounds[0]) io.to(roomCode).emit('round:started', { round: room.game.rounds[0] })
-      cb({})
-      return
-    }
-
-    fail(socket, cb, 'WRONG_STATE', 'Cannot start game in current state')
+    void gameStart(io, socket, cb)
   })
 
   // ─── round:next ───
@@ -308,6 +276,68 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   socket.on('disconnect', () => {
     handleDisconnect(io, socket)
   })
+}
+
+async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void): Promise<void> {
+  const { roomCode, playerId } = socket.data
+  if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+  const room = roomManager.get(roomCode)
+  if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+  if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can start'); return }
+
+  // LOBBY → SUBMITTING
+  if (room.game.status === 'LOBBY') {
+    if (Object.keys(room.game.players).length < MIN_PLAYERS) {
+      fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return
+    }
+    room.game.status = 'SUBMITTING'
+    broadcastGameUpdate(io, roomCode)
+    cb({} as T)
+    return
+  }
+
+  // SUBMITTING → GENERATING → PLAYING
+  if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Cannot start game now'); return }
+  if (Object.keys(room.game.players).length < MIN_PLAYERS) {
+    fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return
+  }
+  if (!room.allPlayersHaveMinFlags()) {
+    fail(socket, cb, 'NOT_ENOUGH_FLAGS', 'All players must submit minimum flags'); return
+  }
+
+  room.game.status = 'GENERATING'
+  broadcastGameUpdate(io, roomCode)
+
+  const flagValues = Object.values(room.game.flags)
+  const llmResult = await orderFlags(flagValues)
+
+  let orderedFlags: typeof flagValues
+  if (llmResult) {
+    const orderMap = new Map(llmResult.orderedFlags.map((o) => [o.flagId, o]))
+    for (const flag of flagValues) {
+      const o = orderMap.get(flag.id)
+      if (o) {
+        flag.theme = o.theme
+        flag.orderIndex = o.orderIndex
+      }
+    }
+    orderedFlags = flagValues.slice().sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+  } else {
+    orderedFlags = randomShuffleFlags(room.game.flags)
+    orderedFlags.forEach((flag, i) => { flag.orderIndex = i })
+  }
+
+  const rounds = buildRounds(orderedFlags)
+  room.setRounds(rounds)
+  room.game.status = 'PLAYING'
+  room.game.currentRoundIndex = 0
+  const firstRound = room.game.rounds[0]!
+  firstRound.status = 'PRESENTING'
+  firstRound.startedAt = Date.now()
+
+  broadcastGameUpdate(io, roomCode)
+  io.to(roomCode).emit('round:started', { round: firstRound })
+  cb({} as T)
 }
 
 function revealRound(io: AppServer, roomCode: string): void {
