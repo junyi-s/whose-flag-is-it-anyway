@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import {
   DEFAULT_GAME_SETTINGS,
+  MAX_FLAGS_ASSIGNED_PER_TARGET,
   MAX_FLAGS_PER_PLAYER,
   MAX_PLAYERS,
   type AvatarConfig,
@@ -93,14 +94,24 @@ export class GameRoom {
     }
   }
 
-  flagsForPlayer(playerId: PlayerId): RedFlag[] {
-    return Object.values(this.game.flags).filter((f) => f.authorId === playerId)
+  selfFlagsForPlayer(playerId: PlayerId): RedFlag[] {
+    return Object.values(this.game.flags).filter(
+      (f) => f.authorId === playerId && f.subjectId === playerId,
+    )
   }
 
-  addFlags(authorId: PlayerId, flags: RedFlag[]): number {
-    // Remove old flags for this player first
+  assignedFlagsByAuthorForSubject(authorId: PlayerId, subjectId: PlayerId): RedFlag[] {
+    return Object.values(this.game.flags).filter(
+      (f) => f.authorId === authorId && f.subjectId === subjectId,
+    )
+  }
+
+  addSelfFlags(playerId: PlayerId, flags: RedFlag[]): number {
+    // Replace only this player's self-flags (authorId === subjectId === playerId)
     for (const [id, flag] of Object.entries(this.game.flags)) {
-      if (flag.authorId === authorId) delete this.game.flags[id]
+      if (flag.authorId === playerId && flag.subjectId === playerId) {
+        delete this.game.flags[id]
+      }
     }
     const toAdd = flags.slice(0, MAX_FLAGS_PER_PLAYER)
     for (const flag of toAdd) {
@@ -109,14 +120,28 @@ export class GameRoom {
     return toAdd.length
   }
 
-  playerFlagCount(playerId: PlayerId): number {
-    return this.flagsForPlayer(playerId).length
+  addAssignedFlags(authorId: PlayerId, subjectId: PlayerId, flags: RedFlag[]): number {
+    // Replace only flags this author previously assigned to this subject
+    for (const [id, flag] of Object.entries(this.game.flags)) {
+      if (flag.authorId === authorId && flag.subjectId === subjectId) {
+        delete this.game.flags[id]
+      }
+    }
+    const toAdd = flags.slice(0, MAX_FLAGS_ASSIGNED_PER_TARGET)
+    for (const flag of toAdd) {
+      this.game.flags[flag.id] = flag
+    }
+    return toAdd.length
+  }
+
+  selfFlagCount(playerId: PlayerId): number {
+    return this.selfFlagsForPlayer(playerId).length
   }
 
   allPlayersHaveMinFlags(): boolean {
     const min = this.game.settings.minFlagsPerPlayer
     return Object.keys(this.game.players).every(
-      (pid) => this.playerFlagCount(pid) >= min,
+      (pid) => this.selfFlagCount(pid) >= min,
     )
   }
 

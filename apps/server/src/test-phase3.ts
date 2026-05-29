@@ -77,17 +77,21 @@ async function run() {
 
     await emit(sA, 'round:openVoting', {})
 
-    // Determine current round's flag author from latestGame
+    // Voting answer is the SUBJECT (not the author)
     const game = latestGame!
     const round = game.rounds[game.currentRoundIndex]!
     const flagAuthorId = round.redFlag.authorId
+    const flagSubjectId = round.redFlag.subjectId
 
-    // Each player votes for whoever is NOT the flag author (guessing wrong or right)
-    const aliceVote = flagAuthorId === aliceId ? bobId : aliceId  // Alice can't vote self
-    const bobVote = flagAuthorId === bobId ? aliceId : bobId      // Bob can't vote self
-
-    await emit(sA, 'vote:cast', { guessedPlayerId: aliceVote })
-    await emit(sB, 'vote:cast', { guessedPlayerId: bobVote })
+    // Author cannot vote; everyone else can, including self-pick
+    if (flagAuthorId !== aliceId) {
+      // Alice guesses the subject correctly when she can
+      await emit(sA, 'vote:cast', { guessedPlayerId: flagSubjectId })
+    }
+    if (flagAuthorId !== bobId) {
+      // Bob guesses the subject correctly when he can
+      await emit(sB, 'vote:cast', { guessedPlayerId: flagSubjectId })
+    }
 
     const revealPromise = new Promise<void>((resolve) => { sA.once('round:revealed', () => resolve()) })
     await emit(sA, 'round:reveal', {})
@@ -108,7 +112,7 @@ async function run() {
     if (score < 0) throw new Error(`Negative score for ${pid}: ${score}`)
   }
 
-  console.log('\n✅ Phase 3 acceptance checks passed')
+  console.log('\n✅ Phase 3 + 5.5 acceptance checks passed')
   sA.disconnect()
   sB.disconnect()
   process.exit(0)

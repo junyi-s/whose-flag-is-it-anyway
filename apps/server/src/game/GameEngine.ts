@@ -13,16 +13,18 @@ export function computeScoreDeltas(
   settings: Game['settings'],
 ): Record<PlayerId, number> {
   const deltas: Record<PlayerId, number> = {}
-  const correctAuthorId = flags[round.redFlag.id]?.authorId
+  // Answer is the SUBJECT, not the author
+  const correctSubjectId = flags[round.redFlag.id]?.subjectId
 
   for (const [voterId, guessedId] of Object.entries(round.votes)) {
-    if (guessedId === correctAuthorId) {
-      // Voter guessed correctly
+    if (guessedId === correctSubjectId) {
+      // Correct guess (includes subject recognising their own assigned flag)
       deltas[voterId] = (deltas[voterId] ?? 0) + settings.pointsForCorrectGuess
-    } else {
-      // Wrong guess → the guessed player fooled this voter
+    } else if (guessedId !== voterId) {
+      // Wrong guess on someone else → that player fooled this voter
       deltas[guessedId] = (deltas[guessedId] ?? 0) + settings.pointsForFoolingOthers
     }
+    // Wrong self-vote (guessedId === voterId) → nobody scores
   }
 
   return deltas
@@ -52,10 +54,11 @@ export function buildRounds(orderedFlags: RedFlag[]): Round[] {
   }))
 }
 
-export function makeFlag(text: string, authorId: PlayerId): RedFlag {
+export function makeFlag(text: string, authorId: PlayerId, subjectId?: PlayerId): RedFlag {
   return {
     id: uuidv4(),
     text,
     authorId,
+    subjectId: subjectId ?? authorId,
   }
 }

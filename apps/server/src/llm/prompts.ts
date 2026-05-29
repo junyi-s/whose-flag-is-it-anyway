@@ -8,9 +8,9 @@ quirky habits, or pet peeves). Your job is to:
    (e.g., "Communication Crimes", "Hygiene Horrors", "Texting Sins").
 2. Order them so the game flows well: start with lighter, funnier flags,
    build to spicier/more dramatic ones, and intersperse themes for variety.
-3. Avoid placing two flags from the same author back-to-back.
+3. Avoid placing two flags about the same subject back-to-back.
 
-You will receive an array of red flags with author IDs.
+You will receive an array of red flags with subject IDs.
 Output ONLY valid JSON matching this schema:
 {
   "themes": ["Theme 1", "Theme 2", ...],
@@ -23,12 +23,13 @@ Output ONLY valid JSON matching this schema:
 export function buildUserPrompt(flags: RedFlag[]): string {
   const list = flags.map((f) => ({
     id: f.id,
-    authorId: f.authorId,
+    subjectId: f.subjectId,
     text: f.text,
   }))
   return `Here are the red flags:
 ${JSON.stringify(list, null, 2)}
 
-There are ${flags.length} total red flags from ${new Set(flags.map((f) => f.authorId)).size} players.
-Return the full ordering JSON.`
+There are ${flags.length} total red flags about ${new Set(flags.map((f) => f.subjectId)).size} players.
+Return the full ordering JSON.
+(subjectId identifies whose flag it is — keep two flags about the same subject apart.)`
 }

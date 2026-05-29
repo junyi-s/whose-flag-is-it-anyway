@@ -4,6 +4,8 @@
 > **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
+> **Feature added 2026-05-29:** Assigned red flags ("call out other players"). A flag now has an `authorId` (who wrote it) and a `subjectId` (whose flag it is = the voting answer). Self-flags have `subjectId === authorId`. See `IMPLEMENTATION_PLAN.md` §1, §4, §5, §8, §9 Phase 5.5. Scoring rule: answer = subject; only the author is blocked from voting; the subject may vote and scores if they correctly pick themselves; a wrong self-vote awards nobody.
+
 This file tracks implementation progress for `IMPLEMENTATION_PLAN.md`. The executing agent must update this file at the start and end of every task. Do not skip ahead; do not work on multiple phases simultaneously.
 
 ---
@@ -218,27 +220,61 @@ Also fixed server bug: `room:create`, `room:join`, `room:rejoin` handlers now al
 
 ---
 
+## Phase 5.5 — Feature: Assigned Red Flags (shared + server retrofit)
+
+> **Goal:** Add the "call out other players" feature to the data model + server, retrofitting the already-committed shared/server code from Phases 1–4. Must land before the Phase 6 submit UI.
+> **Phase status:** Complete
+> **Commit message when done:** `feat(phase-5.5): assigned red flags (schema + server)`
+
+### Tasks
+
+- [x] `packages/shared/src/types.ts`: add `subjectId: PlayerId` to `RedFlag`
+- [x] `packages/shared/src/constants.ts`: add `MAX_FLAGS_ASSIGNED_PER_TARGET = 5`
+- [x] `packages/shared/src/events.ts`: add `flags:assign` event + `FlagsAssignPayload` + `FlagsAssignResponse`
+- [x] `packages/shared/src/schemas.ts`: add `FlagsAssignSchema` (subjectId uuid; flags 1..5; each 3–200 chars, trimmed)
+- [x] Server `GameEngine.makeFlag(text, authorId, subjectId)` — thread subjectId through
+- [x] Server `GameRoom`: scope self-flag replacement to `authorId === subjectId === player`; add assigned-flag set scoped to `(author, target)`; `allPlayersHaveMinFlags()` counts SELF flags only
+- [x] Server `flags:submit` / `flags:import`: pass `playerId` as subjectId (self)
+- [x] Server `flags:assign` handler: SUBMITTING only; subject must be a real player and ≠ author; cap 5; emit `game:updated`
+- [x] Server `vote:cast`: **already correct, verify only** — it blocks `flag.authorId === voter` (author-only) and has no self-pick guard, which is exactly the new rule. Do NOT change the block to `subjectId`.
+- [x] Server `computeScoreDeltas`: answer = `subjectId`; correct → voter; wrong & guess ≠ voter → guessed player; wrong & guess === voter → nobody (the only behavioral change to existing scoring)
+- [x] Server `llm/prompts.ts`: send `subjectId` (not authorId); keep same-subject flags apart
+- [x] Update/extend the socket test script: assigned flag + subject self-scores + wrong self-vote awards nobody
+- [x] Verify: `pnpm -r typecheck` + `pnpm -r build` pass
+- [x] Verify: assigning to self / non-player / a 6th flag is rejected
+- [x] Verify: author can't vote; subject can and scores on a correct self-pick; wrong self-vote = no points
+- [x] Commit
+
+### Notes
+
+_(executor adds notes here as needed)_
+
+---
+
 ## Phase 6 — Client: Submit Flags Screen
 
-> **Goal:** Players add / import their red flags.
+> **Goal:** Players add / import their own red flags, and optionally plant flags on other players.
 > **Phase status:** Not started
 > **Commit message when done:** `feat(phase-6): submit flags screen`
 
 ### Tasks
 
 - [ ] Build `routes/SubmitFlags.tsx`:
-  - [ ] Big input field + "ADD" button
+  - [ ] **"Your Red Flags"** section (required): big input field + "ADD" button
   - [ ] List of own flags with delete buttons (animated entry/exit)
   - [ ] Counter chip: "5 / 5 ✓" (green when ≥min)
-  - [ ] "Import .txt" button → file picker
-  - [ ] "READY" button (active at min, disabled below)
-  - [ ] Live progress sidebar/bar showing other players' counts
+  - [ ] **"Call Out Others"** section (optional): pick a player → add up to 5 flags for them, "X / 5" counter, remove buttons; copy makes clear it's hidden from the target
+  - [ ] Wire `flags:assign` per target; block a 6th flag and block assigning to self
+  - [ ] "Import .txt" button → file picker (own flags only)
+  - [ ] "READY" button (active at min SELF count, disabled below)
+  - [ ] Live progress sidebar/bar showing other players' SELF counts (call-outs not surfaced)
 - [ ] Create `src/lib/fileImport.ts` — parse, trim, dedupe, validate length
-- [ ] Wire to `flags:submit` and `flags:import` socket events
+- [ ] Wire to `flags:submit`, `flags:import`, and `flags:assign` socket events
 - [ ] When all players ready, host sees "START GAME" override
 - [ ] Show loading state "Shuffling the deck…" during GENERATING
 - [ ] Verify: typed entry works
 - [ ] Verify: file import accepts a 10-line `.txt`
+- [ ] Verify: can assign up to 5 flags to another player; 6th and self-assign blocked
 - [ ] Verify: cannot ready below minimum
 - [ ] Commit
 
@@ -256,8 +292,8 @@ Also fixed server bug: `room:create`, `room:join`, `room:rejoin` handlers now al
 
 - [ ] Build `components/RedFlagCard.tsx` — bold card, theme banner above
 - [ ] Build `components/Timer.tsx` — countdown ring/bar, pulses when low
-- [ ] Build `components/VotingPanel.tsx` — grid of player avatars, disabled = self
-- [ ] Build `components/RoundResults.tsx` — animated vote bars, correct author highlight
+- [ ] Build `components/VotingPanel.tsx` — grid of player avatars; if YOU authored the flag the whole panel is disabled ("You wrote this one"); otherwise every avatar is enabled **including your own** (never disable self — it would leak the answer)
+- [ ] Build `components/RoundResults.tsx` — animated vote bars; highlight the **subject** (correct answer); for assigned flags also reveal the author ("…and {author} planted it 👀")
 - [ ] Build `components/Scoreboard.tsx` — sorted list with animated `+100` deltas
 - [ ] Build `routes/Game.tsx` — switches sub-view by `currentRound.status`:
   - [ ] PRESENTING: card with reveal animation, host sees "OPEN VOTING"
@@ -269,7 +305,8 @@ Also fixed server bug: `room:create`, `room:join`, `room:rejoin` handlers now al
 - [ ] Framer Motion transitions between sub-views
 - [ ] Sound hook stub (`src/lib/sounds.ts`) — call for vote / reveal / score / win
 - [ ] Verify: end-to-end playable on mobile
-- [ ] Verify: cannot vote for own flag
+- [ ] Verify: author of a flag cannot vote; everyone else can, self-pick allowed
+- [ ] Verify: reveal shows the subject as the answer + the author for assigned flags
 - [ ] Verify: host controls disabled when not allowed
 - [ ] Commit
 

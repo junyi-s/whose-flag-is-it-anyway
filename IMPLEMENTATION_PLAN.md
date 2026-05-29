@@ -16,6 +16,8 @@ This document is the single source of truth for building the game. It is written
 ### Concept
 A multiplayer party game (2–20 players) where each player submits their personal "red flags." The game then presents red flags one at a time, and players vote on whose red flag they think it is. Points are awarded for correct guesses. An LLM (OpenAI) themes and orders the red flags to make the game flow more interesting.
 
+**Assigned flags (call-outs).** During submission, players can *optionally* plant red flags on **other** players — up to 5 per target. A flag therefore has two roles: an **author** (who wrote it) and a **subject** (whose flag it is). The subject is the voting answer. Self-submitted flags simply have `subjectId === authorId`; assigned flags have an author different from the subject. Gameplay, voting, and scoring are otherwise unchanged — a flag is just "whose is it?", and the answer is the subject. The only voting restriction is that the **author** can't vote on their own flag; the subject *can* vote, and even scores if they correctly recognise a call-out written about them. See §9 Phase 3 for the exact scoring rules.
+
 ### Goals
 - **Cheap to run:** Target ~$5/month infrastructure + ~$0.01/game in LLM costs
 - **Mobile-first:** Players join from their phones; works as a PWA
@@ -120,7 +122,10 @@ export interface AvatarConfig {
 export interface RedFlag {
   id: RedFlagId;
   text: string;                       // 3-200 chars
-  authorId: PlayerId;
+  authorId: PlayerId;                 // Who WROTE the flag (mostly hidden metadata)
+  subjectId: PlayerId;                // Whose flag it is — the VOTING ANSWER.
+                                      //   Self-flag: subjectId === authorId
+                                      //   Assigned flag: someone called out another player
   theme?: string;                     // Set by LLM, e.g. "Dating Habits"
   orderIndex?: number;                // Set by LLM, position in game
 }
@@ -199,8 +204,9 @@ All events use a typed payload. Defined in `packages/shared/src/events.ts`.
 | `room:join` | `{ code: RoomCode, playerName: string, avatar: AvatarConfig }` | `{ playerId: PlayerId, game: Game }` | Joins existing room |
 | `room:rejoin` | `{ code: RoomCode, playerId: PlayerId }` | `{ game: Game }` | Reconnect after disconnect |
 | `room:leave` | `{}` | `{}` | Player leaves voluntarily |
-| `flags:submit` | `{ flags: string[] }` | `{ accepted: number }` | Submit red flags |
-| `flags:import` | `{ text: string }` | `{ accepted: number, rejected: string[] }` | Parse text file, one flag per line |
+| `flags:submit` | `{ flags: string[] }` | `{ accepted: number }` | Submit your OWN red flags (subjectId = you) |
+| `flags:import` | `{ text: string }` | `{ accepted: number, rejected: string[] }` | Parse text file, one flag per line (your own flags) |
+| `flags:assign` | `{ subjectId: PlayerId, flags: string[] }` | `{ accepted: number }` | Optionally assign up to 5 flags to ANOTHER player (subjectId ≠ you) |
 | `game:start` | `{}` | `{}` | Host only; triggers LLM ordering, moves to PLAYING |
 | `round:next` | `{}` | `{}` | Host only; advances to next round |
 | `round:openVoting` | `{}` | `{}` | Host only; moves PRESENTING → VOTING |
@@ -247,7 +253,7 @@ Used only for stateless / non-realtime operations.
             ┌─────────────┐
             │ SUBMITTING  │ (players enter flags)
             └──────┬──────┘
-                   │ all players have ≥minFlags AND host:game:start
+                   │ all players have ≥min SELF flags AND host:game:start
                    ▼
             ┌─────────────┐
             │ GENERATING  │ (server calls LLM)
@@ -287,9 +293,9 @@ quirky habits, or pet peeves). Your job is to:
    (e.g., "Communication Crimes", "Hygiene Horrors", "Texting Sins").
 2. Order them so the game flows well: start with lighter, funnier flags,
    build to spicier/more dramatic ones, and intersperse themes for variety.
-3. Avoid placing two flags from the same author back-to-back.
+3. Avoid placing two flags about the same subject back-to-back.
 
-You will receive an array of red flags with author IDs.
+You will receive an array of red flags with subject IDs.
 Output ONLY valid JSON matching this schema:
 {
   "themes": ["Theme 1", "Theme 2", ...],
@@ -304,12 +310,13 @@ Output ONLY valid JSON matching this schema:
 ```
 Here are the red flags:
 [
-  { "id": "<flag-id>", "authorId": "<author-id>", "text": "<flag-text>" },
+  { "id": "<flag-id>", "subjectId": "<subject-id>", "text": "<flag-text>" },
   ...
 ]
 
-There are <N> total red flags from <M> players.
+There are <N> total red flags about <M> players.
 Return the full ordering JSON.
+(subjectId identifies whose flag it is — keep two flags about the same subject apart.)
 ```
 
 ### Cost Estimate
@@ -388,6 +395,7 @@ MIN_PLAYERS = 2
 MAX_PLAYERS = 20
 MIN_FLAGS_PER_PLAYER = 5
 MAX_FLAGS_PER_PLAYER = 50
+MAX_FLAGS_ASSIGNED_PER_TARGET = 5   // Optional call-outs: max flags one player may assign to each other player
 MIN_FLAG_LENGTH = 3
 MAX_FLAG_LENGTH = 200
 MIN_NAME_LENGTH = 1
@@ -428,16 +436,22 @@ DEFAULT_POINTS_FOOLED = 50
 **Goal:** Players can submit flags; host can start game; rounds advance.
 
 **Tasks:**
-- [ ] Implement `flags:submit` and `flags:import` handlers
+- [ ] Implement `flags:submit` and `flags:import` handlers (self-flags; subjectId = author)
 - [ ] Implement `settings:update` handler (host only, pre-game only)
 - [ ] Create `src/game/GameEngine.ts` — round logic, scoring
-- [ ] Implement `game:start` — validate min flags, transition to GENERATING
+- [ ] Implement `game:start` — validate min SELF flags per player, transition to GENERATING
 - [ ] Implement `round:next`, `round:openVoting`, `round:reveal`, `vote:cast`
-- [ ] Compute score deltas correctly on reveal:
-  - Voter guessed correctly → +pointsForCorrectGuess
-  - Each player who voted for wrong author of someone else's flag → that wrong-author gets +pointsForFoolingOthers
+- [ ] `vote:cast` rules:
+  - Block only the **author** of the flag from voting (`flag.authorId === voter`). The subject may vote.
+  - Voters (including the subject) may pick any player, **including themselves** — the UI never disables self, so it can't leak the answer.
+- [ ] Compute score deltas correctly on reveal (answer = `subjectId`):
+  - Guess === subject → that voter gets +pointsForCorrectGuess (incl. a subject who recognises a call-out written about them)
+  - Guess is wrong AND guess ≠ voter → the guessed player gets +pointsForFoolingOthers
+  - Guess is wrong AND guess === voter → no points to anyone (a wrong self-vote is a harmless abstain; prevents fooling-point farming)
 - [ ] Auto-close voting when timer expires
 - [ ] Emit `round:started`, `round:vote`, `round:revealed`, `game:ended`
+
+> **Note:** The `flags:assign` handler and the `authorId → subjectId` retrofit of scoring/voting land in **Phase 5.5** (added after the original Phase 3 shipped). The rules above are the final, canonical spec.
 
 **Acceptance:**
 - Full game playable via socket scripts: create → join → submit → start (without LLM yet, use shuffle) → vote → reveal → ... → end
@@ -494,26 +508,58 @@ DEFAULT_POINTS_FOOLED = 50
 
 ---
 
+### Phase 5.5: Assigned Red Flags — Shared Types & Server Retrofit
+**Goal:** Add the "call out other players" feature to the data model + server. Inserted after Phases 1–4 shipped, so it retrofits the already-committed shared/server code. Must land before the Phase 6 submit UI consumes it.
+
+**Why a half-phase:** Phases 1–4 are committed. Rather than reopening them, this phase carries every change the feature needs in shared + server, leaving Phases 6–7 to be the client surface.
+
+**Tasks:**
+- [ ] `packages/shared`: add `subjectId: PlayerId` to `RedFlag` (self-flags: `subjectId === authorId`)
+- [ ] `packages/shared`: add `MAX_FLAGS_ASSIGNED_PER_TARGET = 5` constant
+- [ ] `packages/shared`: add `flags:assign` to `ClientToServerEvents` + `FlagsAssignPayload` + `FlagsAssignResponse`
+- [ ] `packages/shared`: add `FlagsAssignSchema` (subjectId is a UUID, flags 1..5, each 3–200 chars)
+- [ ] Server `makeFlag(text, authorId, subjectId)` — thread subjectId through
+- [ ] Server `GameRoom`: split flag storage helpers
+  - self-flags replace scope = flags where `authorId === subjectId === player`
+  - assigned-flags replace scope = flags where `authorId === player && subjectId === target`
+  - `allPlayersHaveMinFlags()` counts SELF flags only (assigned are bonus)
+- [ ] Server `flags:assign` handler: validate subject is a real player and ≠ author; cap at 5; status must be SUBMITTING; emit `game:updated`
+- [ ] Server `vote:cast`: **no change needed** — it already blocks `flag.authorId === voter` (author-only) and never guards `guess === voter` (self-pick already allowed). Just confirm; do NOT switch the block to `subjectId`.
+- [ ] Server scoring (`computeScoreDeltas`): answer = `subjectId`; correct → voter; wrong & guess ≠ voter → guessed player gets fooling; wrong & guess === voter → nobody (this guard is the one real change to existing scoring)
+- [ ] LLM `prompts.ts`: send `subjectId` (not authorId); ask to keep same-subject flags apart
+- [ ] Update `test-phase3.ts` (or add `test-phase5_5.ts`): cover an assigned flag + a subject self-scoring + a wrong self-vote awarding nobody
+
+**Acceptance:**
+- A player can assign ≤5 flags to another player; assigning to self / a non-player / a 6th flag is rejected
+- An assigned flag plays identically to a self-flag from the voter's view
+- Author of a flag cannot vote on it; subject can, and scores if they pick themselves correctly
+- A wrong self-vote awards no points to anyone
+- LLM ordering keeps two flags about the same subject apart (best-effort)
+
+---
+
 ### Phase 6: Client — Submit Flags Screen
-**Goal:** Players add their red flags via text input or file import.
+**Goal:** Players add their own red flags, and optionally plant flags on other players.
 
 **Tasks:**
 - [ ] Build `SubmitFlags.tsx`:
-  - Input field + "Add" button
-  - List of submitted flags with remove buttons
-  - Counter: "X / 5 minimum, X / 50 max"
-  - "Import from file" button → opens file picker (.txt)
+  - Two sections: **"Your Red Flags"** (required) and **"Call Out Others"** (optional)
+  - Your section: input + "Add" button, list with remove, counter "X / 5 minimum, X / 50 max"
+  - "Import from file" button → opens file picker (.txt) — your own flags only
+  - Call-out section: pick a player → add up to 5 flags for them, counter "X / 5", remove buttons
+  - Make clear call-outs are optional and stay hidden from the target
 - [ ] Build `lib/fileImport.ts` — parse .txt, one flag per line, trim, dedupe
-- [ ] Show submission progress of other players (count, not content)
-- [ ] "Ready" button appears at minimum count
+- [ ] Wire `flags:submit` / `flags:import` (self) and `flags:assign` (per target)
+- [ ] Show submission progress of other players (SELF-flag count, not content; call-outs not surfaced)
+- [ ] "Ready" button appears at minimum SELF count
 - [ ] Show waiting state when player is ready but others aren't
 - [ ] Host sees "Start Game" button when all players ready
 
 **Acceptance:**
-- Player can add flags one by one
-- Player can import a .txt file with 10+ flags
-- Other players' progress count updates live
-- Can't proceed below min count
+- Player can add their own flags one by one and import a .txt with 10+ flags
+- Player can assign up to 5 flags to another player; the UI blocks a 6th and blocks assigning to self
+- Other players' SELF progress count updates live; call-outs are not revealed in the UI
+- Can't proceed below min SELF count
 
 ---
 
@@ -524,10 +570,10 @@ DEFAULT_POINTS_FOOLED = 50
 - [ ] Build `Game.tsx` with sub-views for each `RoundStatus`:
   - `<PresentingView>` — big red flag card, theme banner, "Reveal Votes" disabled
   - `<VotingView>` — flag card + grid of player avatars to vote, timer countdown
-  - `<RevealView>` — show who voted for whom (animated bars), highlight correct author
+  - `<RevealView>` — show who voted for whom (animated bars), highlight the **subject** (correct answer); for assigned flags, also reveal the author ("…and {author} planted it 👀")
   - `<ScoreboardView>` — leaderboard with score deltas (animated +100, etc.)
 - [ ] Host-only "Next" / "Open Voting" / "Reveal" buttons (others see "Waiting for host…")
-- [ ] Disable own-flag voting (can't vote for self)
+- [ ] Voting panel: disable voting entirely if **you authored** this flag ("You wrote this one"); otherwise enable every avatar **including your own** (never disable self — it would leak the answer)
 - [ ] Use Framer Motion for card flips, score number animations, vote tally bars
 - [ ] Show round counter (e.g., "Round 5 of 23")
 
@@ -535,7 +581,8 @@ DEFAULT_POINTS_FOOLED = 50
 - Game playable end-to-end on mobile
 - Animations feel snappy (not slow)
 - Host controls work; non-host can't accidentally advance
-- Reveal shows correct author and voter breakdown
+- Author of a flag can't vote; everyone else can, self-pick allowed
+- Reveal shows the subject (answer), the voter breakdown, and the author for assigned flags
 
 ---
 

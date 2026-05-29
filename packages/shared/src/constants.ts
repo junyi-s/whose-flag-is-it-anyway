@@ -6,6 +6,7 @@ export const MIN_FLAGS_PER_PLAYER = 5
 export const MAX_FLAGS_PER_PLAYER = 50
 export const MIN_FLAG_LENGTH = 3
 export const MAX_FLAG_LENGTH = 200
+export const MAX_FLAGS_ASSIGNED_PER_TARGET = 5
 export const MIN_NAME_LENGTH = 1
 export const MAX_NAME_LENGTH = 20
 export const ROOM_CODE_LENGTH = 4

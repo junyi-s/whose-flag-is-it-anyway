@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io'
 import {
+  FlagsAssignSchema,
   FlagsImportSchema,
   FlagsSubmitSchema,
   MAX_FLAG_LENGTH,
@@ -133,7 +134,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
 
     const flags = result.data.flags.map((text) => makeFlag(text, playerId))
-    const accepted = room.addFlags(playerId, flags)
+    const accepted = room.addSelfFlags(playerId, flags)
 
     io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
     broadcastGameUpdate(io, roomCode)
@@ -164,11 +165,33 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     }
 
     const flags = valid.map((text) => makeFlag(text, playerId))
-    const accepted = room.addFlags(playerId, flags)
+    const accepted = room.addSelfFlags(playerId, flags)
 
     io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
     broadcastGameUpdate(io, roomCode)
     cb({ accepted, rejected })
+  })
+
+  // ─── flags:assign ───
+  socket.on('flags:assign', (payload, cb) => {
+    const result = FlagsAssignSchema.safeParse(payload)
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
+
+    const { subjectId, flags: texts } = result.data
+    if (subjectId === playerId) { fail(socket, cb, 'INVALID_SUBJECT', 'Cannot assign flags to yourself'); return }
+    if (!room.hasPlayer(subjectId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Target player not in room'); return }
+
+    const flags = texts.map((text) => makeFlag(text, playerId, subjectId))
+    const accepted = room.addAssignedFlags(playerId, subjectId, flags)
+
+    broadcastGameUpdate(io, roomCode)
+    cb({ accepted })
   })
 
   // ─── game:start ───

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   MAX_FLAG_LENGTH,
+  MAX_FLAGS_ASSIGNED_PER_TARGET,
   MAX_FLAGS_PER_PLAYER,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
@@ -62,6 +63,14 @@ export const FlagsSubmitSchema = z.object({
 
 export const FlagsImportSchema = z.object({
   text: z.string().max((MAX_FLAG_LENGTH + 1) * MAX_FLAGS_PER_PLAYER),
+})
+
+export const FlagsAssignSchema = z.object({
+  subjectId: PlayerIdSchema,
+  flags: z
+    .array(z.string().min(MIN_FLAG_LENGTH).max(MAX_FLAG_LENGTH).trim())
+    .min(1)
+    .max(MAX_FLAGS_ASSIGNED_PER_TARGET),
 })
 
 export const VoteCastSchema = z.object({

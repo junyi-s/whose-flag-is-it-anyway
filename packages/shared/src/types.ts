@@ -22,7 +22,10 @@ export interface AvatarConfig {
 export interface RedFlag {
   id: RedFlagId;
   text: string;                       // 3-200 chars
-  authorId: PlayerId;
+  authorId: PlayerId;                 // Who wrote the flag
+  subjectId: PlayerId;                // Whose flag it is — the voting answer.
+                                      //   Self-flag: subjectId === authorId
+                                      //   Assigned flag: author called out another player
   theme?: string;                     // Set by LLM, e.g. "Dating Habits"
   orderIndex?: number;                // Set by LLM, position in game
 }

@@ -27,6 +27,11 @@ export interface FlagsImportPayload {
   text: string
 }
 
+export interface FlagsAssignPayload {
+  subjectId: PlayerId
+  flags: string[]
+}
+
 export interface VoteCastPayload {
   guessedPlayerId: PlayerId
 }
@@ -44,6 +49,7 @@ export interface ClientToServerEvents {
   'room:leave': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'flags:submit': (payload: FlagsSubmitPayload, cb: (res: FlagsSubmitResponse) => void) => void
   'flags:import': (payload: FlagsImportPayload, cb: (res: FlagsImportResponse) => void) => void
+  'flags:assign': (payload: FlagsAssignPayload, cb: (res: FlagsAssignResponse) => void) => void
   'game:start': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:next': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:openVoting': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
@@ -136,6 +142,10 @@ export interface FlagsSubmitResponse {
 export interface FlagsImportResponse {
   accepted: number
   rejected: string[]
+}
+
+export interface FlagsAssignResponse {
+  accepted: number
 }
 
 export type EmptyResponse = Record<string, never>
