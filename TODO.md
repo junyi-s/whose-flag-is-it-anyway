@@ -1,7 +1,7 @@
 # Whose Flag Is It Anyway? — Build Progress
 
-> **Active phase:** Phase 5 (in progress)
-> **Last updated:** 2026-05-28
+> **Active phase:** Phase 6 (in progress)
+> **Last updated:** 2026-05-29
 > **Updated by:** Claude Sonnet 4.6
 
 This file tracks implementation progress for `IMPLEMENTATION_PLAN.md`. The executing agent must update this file at the start and end of every task. Do not skip ahead; do not work on multiple phases simultaneously.
@@ -180,39 +180,41 @@ Valid-key LLM path deferred to Phase 10 deployment verification (no `OPENAI_API_
 ## Phase 5 — Client: Home & Lobby
 
 > **Goal:** Create/join room, see lobby with avatars.
-> **Phase status:** Not started
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-5): home and lobby screens`
 
 ### Tasks
 
-- [ ] Install client deps: `socket.io-client`, `zustand`, `react-router-dom`, `framer-motion`, `nanoid`
-- [ ] Create `src/lib/socket.ts` — singleton socket connection (lazy connect)
-- [ ] Create `src/lib/avatars.ts` — emoji list + color palette (loud, bright)
-- [ ] Create `src/stores/gameStore.ts` — Zustand store with `game`, `playerId`, `setGame`, etc.
-- [ ] Create `src/hooks/useGameSocket.ts` — subscribes store to socket events
-- [ ] Create `src/hooks/usePersistedIdentity.ts` — read/write `playerId`+`code` to localStorage
-- [ ] Set up React Router with all 5 routes
-- [ ] Build `src/components/ui/Button.tsx` (loud Jackbox: chunky, drop-shadowed, springy hover)
-- [ ] Build `src/components/ui/Input.tsx` (bold border, large text)
-- [ ] Build `src/components/PlayerAvatar.tsx` (emoji on colored circle, big)
-- [ ] Build `routes/Home.tsx`:
-  - [ ] Giant animated title "RED FLAGS" (rotating/bouncing emojis)
-  - [ ] "Create Game" → modal: name input + avatar picker (emoji + color grid)
-  - [ ] "Join Game" → input code (auto-uppercase) + name + avatar
-- [ ] Build `routes/Lobby.tsx`:
-  - [ ] Massive room code at top
-  - [ ] Copy-link button (writes share URL to clipboard)
-  - [ ] Player grid (avatars bouncing in on join)
-  - [ ] Settings drawer (host only)
-  - [ ] "START GAME" button (host, disabled until 2+ players)
-- [ ] Persist identity to localStorage on join
-- [ ] On `App` mount: if identity exists, attempt rejoin
-- [ ] Verify: two windows can create + join
-- [ ] Verify: refresh mid-lobby reconnects with same identity
-- [ ] Verify: looks good at 375px mobile width
-- [ ] Commit
+- [x] Install client deps: `socket.io-client`, `zustand`, `react-router-dom`, `framer-motion`, `nanoid`
+- [x] Create `src/lib/socket.ts` — singleton socket connection (lazy connect)
+- [x] Create `src/lib/avatars.ts` — emoji list + color palette (loud, bright)
+- [x] Create `src/stores/gameStore.ts` — Zustand store with `game`, `playerId`, `setGame`, etc.
+- [x] Create `src/hooks/useGameSocket.ts` — subscribes store to socket events
+- [x] Create `src/hooks/usePersistedIdentity.ts` — read/write `playerId`+`code` to localStorage
+- [x] Set up React Router with all 5 routes
+- [x] Build `src/components/ui/Button.tsx` (loud Jackbox: chunky, drop-shadowed, springy hover)
+- [x] Build `src/components/ui/Input.tsx` (bold border, large text)
+- [x] Build `src/components/PlayerAvatar.tsx` (emoji on colored circle, big)
+- [x] Build `routes/Home.tsx`:
+  - [x] Giant animated title with rotating flag emoji
+  - [x] "Create Game" → modal: name input + avatar picker (emoji + color grid)
+  - [x] "Join Game" → input code (auto-uppercase) + name + avatar
+- [x] Build `routes/Lobby.tsx`:
+  - [x] Massive room code at top
+  - [x] Copy-link button (writes share URL to clipboard)
+  - [x] Player grid (avatars bouncing in on join via AnimatePresence)
+  - [x] Settings drawer (host only)
+  - [x] "START GAME" button (host, disabled until 2+ players)
+- [x] Persist identity to localStorage on join
+- [x] On `App` mount: if identity exists, attempt rejoin
+- [x] Verify: two windows can create + join
+- [x] Verify: refresh mid-lobby reconnects with same identity
+- [x] Verify: looks good at 375px mobile width
+- [x] Commit
 
 ### Notes
+
+Also fixed server bug: `room:create`, `room:join`, `room:rejoin` handlers now always call `cb()` on error (using `fail()`) so the client acknowledgement never hangs.
 
 ---
 

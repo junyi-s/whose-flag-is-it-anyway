@@ -41,10 +41,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   // ─── room:create ───
   socket.on('room:create', (payload, cb) => {
     const result = RoomCreateSchema.safeParse(payload)
-    if (!result.success) {
-      emitError(socket, 'VALIDATION_ERROR', result.error.message)
-      return
-    }
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
     const { playerName, avatar, settings } = result.data
     const room = roomManager.create(playerName, avatar, settings)
     const hostId = room.game.hostId
@@ -60,17 +57,14 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   // ─── room:join ───
   socket.on('room:join', (payload, cb) => {
     const result = RoomJoinSchema.safeParse(payload)
-    if (!result.success) {
-      emitError(socket, 'VALIDATION_ERROR', result.error.message)
-      return
-    }
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
     const { code, playerName, avatar } = result.data
     const room = roomManager.get(code)
 
-    if (!room) { emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
-    if (room.game.status !== 'LOBBY') { emitError(socket, 'GAME_IN_PROGRESS', 'Game has already started'); return }
-    if (room.isFull()) { emitError(socket, 'ROOM_FULL', 'Room is full'); return }
-    if (room.isNameTaken(playerName)) { emitError(socket, 'NAME_TAKEN', 'That name is already taken'); return }
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
+    if (room.game.status !== 'LOBBY') { fail(socket, cb, 'GAME_IN_PROGRESS', 'Game has already started'); return }
+    if (room.isFull()) { fail(socket, cb, 'ROOM_FULL', 'Room is full'); return }
+    if (room.isNameTaken(playerName)) { fail(socket, cb, 'NAME_TAKEN', 'That name is already taken'); return }
 
     const player = room.addPlayer(playerName, avatar)
     void socket.join(code)
@@ -86,15 +80,12 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   // ─── room:rejoin ───
   socket.on('room:rejoin', (payload, cb) => {
     const result = RoomRejoinSchema.safeParse(payload)
-    if (!result.success) {
-      emitError(socket, 'VALIDATION_ERROR', result.error.message)
-      return
-    }
+    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
     const { code, playerId } = result.data
     const room = roomManager.get(code)
 
-    if (!room) { emitError(socket, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
-    if (!room.hasPlayer(playerId)) { emitError(socket, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
+    if (!room.hasPlayer(playerId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
 
     room.setConnected(playerId, true)
     void socket.join(code)
