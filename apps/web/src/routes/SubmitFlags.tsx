@@ -11,7 +11,7 @@ import {
   MAX_FLAGS_ASSIGNED_PER_TARGET,
   MIN_FLAG_LENGTH,
 } from '@whose-flag/shared'
-import type { Player, PlayerId, RedFlag } from '@whose-flag/shared'
+import type { Player, PlayerId, RedFlagView } from '@whose-flag/shared'
 
 export function SubmitFlags() {
   const { code } = useParams<{ code: string }>()
@@ -29,16 +29,22 @@ export function SubmitFlags() {
   if (game.status === 'GENERATING') return <GeneratingScreen />
 
   const allFlags = Object.values(game.flags)
-  const selfFlags = allFlags.filter((f) => f.authorId === playerId && f.subjectId === playerId)
+  // During SUBMITTING the server only sends flags where authorId === viewer,
+  // so text/subjectId are always present on these objects.
+  const selfFlags = allFlags.filter(
+    (f): f is RedFlagView & { text: string } =>
+      f.authorId === playerId && f.subjectId === playerId && f.text !== undefined,
+  )
   const otherPlayers = Object.values(game.players).filter((p) => p.id !== playerId)
   const minFlags = game.settings.minFlagsPerPlayer
   const maxFlags = game.settings.maxFlagsPerPlayer
   const isHost = game.hostId === playerId
   const hasEnoughSelf = selfFlags.length >= minFlags
 
-  const allPlayersReady = Object.values(game.players).every(
-    (p) => allFlags.filter((f) => f.authorId === p.id && f.subjectId === p.id).length >= minFlags,
-  )
+  const allPlayersReady = game.submissionStatus != null &&
+    Object.keys(game.players).every(
+      (pid) => (game.submissionStatus![pid] ?? 0) >= minFlags,
+    )
 
   return (
     <div className="min-h-screen bg-bg-base pb-36">
@@ -54,7 +60,7 @@ export function SubmitFlags() {
         {/* Player progress */}
         <PlayerProgressRow
           players={Object.values(game.players)}
-          allFlags={allFlags}
+          submissionStatus={game.submissionStatus ?? {}}
           minFlags={minFlags}
           currentPlayerId={playerId}
         />
@@ -101,7 +107,7 @@ function SelfFlagsSection({
   minFlags,
   maxFlags,
 }: {
-  selfFlags: RedFlag[]
+  selfFlags: Array<RedFlagView & { text: string }>
   minFlags: number
   maxFlags: number
 }) {
@@ -238,14 +244,15 @@ function CallOutSection({
 }: {
   myPlayerId: PlayerId
   otherPlayers: Player[]
-  allFlags: RedFlag[]
+  allFlags: RedFlagView[]
 }) {
   const [target, setTarget] = useState<PlayerId>(otherPlayers[0]!.id)
   const [inputVal, setInputVal] = useState('')
   const [busy, setBusy] = useState(false)
 
   const targetFlags = allFlags.filter(
-    (f) => f.authorId === myPlayerId && f.subjectId === target,
+    (f): f is RedFlagView & { text: string } =>
+      f.authorId === myPlayerId && f.subjectId === target && f.text !== undefined,
   )
   const atMax = targetFlags.length >= MAX_FLAGS_ASSIGNED_PER_TARGET
   const targetPlayer = otherPlayers.find((p) => p.id === target)
@@ -401,21 +408,19 @@ function CallOutSection({
 
 function PlayerProgressRow({
   players,
-  allFlags,
+  submissionStatus,
   minFlags,
   currentPlayerId,
 }: {
   players: Player[]
-  allFlags: RedFlag[]
+  submissionStatus: Record<string, number>
   minFlags: number
   currentPlayerId: PlayerId
 }) {
   return (
     <div className="flex flex-wrap gap-3 justify-center">
       {players.map((player) => {
-        const count = allFlags.filter(
-          (f) => f.authorId === player.id && f.subjectId === player.id,
-        ).length
+        const count = submissionStatus[player.id] ?? 0
         const ready = count >= minFlags
         const isMe = player.id === currentPlayerId
         return (

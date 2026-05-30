@@ -60,7 +60,6 @@ function AppInner() {
       else if (status === 'FINAL_RESULTS') navigate(`/results/${code}`)
     })
   // Only run on mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

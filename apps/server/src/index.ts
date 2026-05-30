@@ -17,13 +17,16 @@ import { startRoomGc } from './middleware/roomGc.js'
 const PORT = process.env['PORT'] ?? 3001
 const CORS_ORIGIN = process.env['CORS_ORIGIN'] ?? 'http://localhost:5173'
 
-// Max bytes we ever need to accept: flags:import with 300 flags × 201 bytes
-const MAX_HTTP_BUFFER = 128 * 1024  // 128 KB — generous headroom above the real max
+// 128 KB is generous headroom for the largest expected socket payloads
+const MAX_HTTP_BUFFER = 128 * 1024
 
 const app = express()
 const httpServer = http.createServer(app)
 
 // ─── Express middleware ───────────────────────────────────────────────────────
+// Trust the first upstream proxy (Railway's load balancer) so that req.ip and
+// express-rate-limit key on the real client IP from X-Forwarded-For.
+app.set('trust proxy', 1)
 app.use(helmet())
 app.use(cors({ origin: CORS_ORIGIN }))
 app.use(express.json({ limit: '32kb' }))

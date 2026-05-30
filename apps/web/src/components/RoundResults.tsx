@@ -1,16 +1,16 @@
 import { motion } from 'framer-motion'
-import type { Player, PlayerId, RedFlag, Round } from '@whose-flag/shared'
+import type { Player, PlayerId, RedFlagView, RoundView } from '@whose-flag/shared'
 
 interface RoundResultsProps {
-  round: Round
-  flag: RedFlag
+  round: RoundView
+  flag: RedFlagView
   players: Record<PlayerId, Player>
 }
 
 export function RoundResults({ round, flag, players }: RoundResultsProps) {
-  const subject = players[flag.subjectId]
-  const author = players[flag.authorId]
-  const wasPlanted = flag.authorId !== flag.subjectId
+  const subject = flag.subjectId ? players[flag.subjectId] : undefined
+  const author = flag.authorId ? players[flag.authorId] : undefined
+  const wasPlanted = flag.authorId !== undefined && flag.authorId !== flag.subjectId
 
   // Tally votes per guessed player: who did voters point at?
   const tally: Record<PlayerId, PlayerId[]> = {}
@@ -22,7 +22,7 @@ export function RoundResults({ round, flag, players }: RoundResultsProps) {
   // Show every player who received a vote, plus the subject (even if 0 votes),
   // sorted by vote count descending.
   const rowIds = new Set<PlayerId>(Object.keys(tally))
-  rowIds.add(flag.subjectId)
+  if (flag.subjectId) rowIds.add(flag.subjectId)
   const rows = [...rowIds].sort((a, b) => (tally[b]?.length ?? 0) - (tally[a]?.length ?? 0))
 
   return (
@@ -60,7 +60,7 @@ export function RoundResults({ round, flag, players }: RoundResultsProps) {
         {rows.map((pid) => {
           const voters = tally[pid] ?? []
           const player = players[pid]
-          const isAnswer = pid === flag.subjectId
+          const isAnswer = flag.subjectId !== undefined && pid === flag.subjectId
           return (
             <div key={pid} className="flex items-center gap-3">
               <span

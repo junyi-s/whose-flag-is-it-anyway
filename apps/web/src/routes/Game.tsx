@@ -59,12 +59,12 @@ export function Game() {
             className="space-y-6 pt-2"
           >
             {round.status === 'PRESENTING' && (
-              <RedFlagCard text={flag.text} theme={flag.theme} />
+              <RedFlagCard text={flag.text ?? ''} theme={flag.theme} />
             )}
 
             {round.status === 'VOTING' && (
               <>
-                <RedFlagCard text={flag.text} theme={flag.theme} />
+                <RedFlagCard text={flag.text ?? ''} theme={flag.theme} />
                 {round.votingEndsAt && (
                   <Timer
                     votingEndsAt={round.votingEndsAt}
@@ -74,7 +74,7 @@ export function Game() {
                 <VotingPanel
                   players={players}
                   myPlayerId={playerId}
-                  authorId={flag.authorId}
+                  isOwnFlag={round.redFlag.isOwnFlag ?? false}
                   myVote={round.votes[playerId]}
                 />
               </>

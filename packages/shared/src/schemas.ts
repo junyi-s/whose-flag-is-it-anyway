@@ -62,10 +62,6 @@ export const FlagsSubmitSchema = z.object({
     .max(MAX_FLAGS_PER_PLAYER),
 })
 
-export const FlagsImportSchema = z.object({
-  text: z.string().max((MAX_FLAG_LENGTH + 1) * MAX_FLAGS_PER_PLAYER),
-})
-
 export const FlagsAssignSchema = z.object({
   subjectId: PlayerIdSchema,
   flags: z

@@ -1,5 +1,4 @@
 // Per-IP connection cap (T4) and per-IP room-create rate limit (T2).
-// Both are keyed on socket.handshake.address (the IP Socket.IO sees).
 
 import type { Server, Socket } from 'socket.io'
 import type { ClientToServerEvents, ServerToClientEvents } from '@whose-flag/shared'
@@ -12,19 +11,33 @@ import {
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>
 
+// ─── Real-IP extraction ───────────────────────────────────────────────────────
+
+/**
+ * Returns the originating client IP for a socket.
+ * Behind Railway (or any proxy that sets X-Forwarded-For), the leftmost entry
+ * is the real client. Falls back to the raw TCP address for local dev.
+ */
+export function getClientIp(socket: Socket): string {
+  const fwd = socket.handshake.headers['x-forwarded-for']
+  const first = Array.isArray(fwd) ? fwd[0] : fwd
+  if (first) return first.split(',')[0]!.trim()
+  return socket.handshake.address
+}
+
 // ─── Per-IP concurrent connection cap ────────────────────────────────────────
 
 /** Returns the number of currently-connected sockets from `ip`. */
 function countConnsFromIp(io: AppServer, ip: string): number {
   let count = 0
-  for (const socket of io.sockets.sockets.values()) {
-    if (socket.handshake.address === ip && socket.connected) count++
+  for (const s of io.sockets.sockets.values()) {
+    if (getClientIp(s) === ip && s.connected) count++
   }
   return count
 }
 
 export function enforceConnectionCap(io: AppServer, socket: Socket): boolean {
-  const ip = socket.handshake.address
+  const ip = getClientIp(socket)
   const count = countConnsFromIp(io, ip)
   if (count > MAX_CONNS_PER_IP) {
     logger.warn(`[conn-cap] ${ip} exceeded ${MAX_CONNS_PER_IP} connections (${count}), disconnecting`)

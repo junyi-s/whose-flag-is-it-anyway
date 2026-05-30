@@ -79,6 +79,53 @@ export interface Game {
   createdAt: number;
 }
 
+// ─── Redacted / client-visible views ─────────────────────────────────────────
+
+/**
+ * What clients receive for a flag. `subjectId`, `authorId`, and `text` are
+ * conditionally stripped depending on game phase — see redactGameFor.
+ */
+export interface RedFlagView {
+  id: RedFlagId;
+  text?: string;
+  authorId?: PlayerId;
+  subjectId?: PlayerId;
+  theme?: string;
+  orderIndex?: number;
+  /** True when the viewing player is the author of this flag. */
+  isOwnFlag?: boolean;
+}
+
+export interface RoundView {
+  index: number;
+  redFlag: RedFlagView;
+  status: RoundStatus;
+  /** Sparse during VOTING: only contains the viewer's own vote. */
+  votes: Record<PlayerId, PlayerId>;
+  startedAt: number;
+  votingEndsAt?: number;
+}
+
+/**
+ * The game object sent to each client — full Game minus the secrets they
+ * shouldn't know yet. Produced by redactGameFor on the server.
+ */
+export interface GameView {
+  code: RoomCode;
+  status: GameStatus;
+  hostId: PlayerId;
+  settings: GameSettings;
+  players: Record<PlayerId, Player>;
+  /** Only viewer's own flags during SUBMITTING/GENERATING; empty during PLAYING. */
+  flags: Record<RedFlagId, RedFlagView>;
+  /** Self-flag count per player, present only during SUBMITTING/GENERATING. */
+  submissionStatus?: Record<PlayerId, number>;
+  rounds: RoundView[];
+  currentRoundIndex: number;
+  scores: Record<PlayerId, number>;
+  createdAt: number;
+}
+
 // ─── LLM Output Schema ───
 export interface LlmOrderingResult {
   themes: string[];                   // List of theme names used

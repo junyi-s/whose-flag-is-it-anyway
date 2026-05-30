@@ -1,17 +1,15 @@
 import type { Server, Socket } from 'socket.io'
 import {
   FlagsAssignSchema,
-  FlagsImportSchema,
   FlagsSubmitSchema,
   GamePlayAgainSchema,
-  MAX_FLAG_LENGTH,
-  MIN_FLAG_LENGTH,
   MIN_PLAYERS,
   RoomCreateSchema,
   RoomJoinSchema,
   RoomRejoinSchema,
   SettingsUpdateSchema,
   VoteCastSchema,
+  redactGameFor,
   type ClientToServerEvents,
   type ServerToClientEvents,
 } from '@whose-flag/shared'
@@ -19,7 +17,7 @@ import { roomManager } from '../game/roomManager.js'
 import { buildRounds, computeScoreDeltas, makeFlag, nextRoundIndex, randomShuffleFlags } from '../game/GameEngine.js'
 import { orderFlags } from '../llm/questionGen.js'
 import { logger } from '../utils/logger.js'
-import { checkRoomCreateLimit } from '../middleware/connectionLimits.js'
+import { checkRoomCreateLimit, getClientIp } from '../middleware/connectionLimits.js'
 import { allowEvent } from '../middleware/eventThrottle.js'
 import { touchRoom } from '../middleware/roomGc.js'
 import { MAX_ROOMS } from '../config.js'
@@ -41,7 +39,10 @@ function broadcastGameUpdate(io: AppServer, roomCode: string): void {
   const room = roomManager.get(roomCode)
   if (!room) return
   touchRoom(roomCode)
-  io.to(roomCode).emit('game:updated', { game: room.snapshot() })
+  const snapshot = room.snapshot()
+  for (const player of Object.values(room.game.players)) {
+    io.to(player.id).emit('game:updated', { game: redactGameFor(snapshot, player.id) })
+  }
 }
 
 export function registerHandlers(io: AppServer, socket: AppSocket): void {
@@ -58,7 +59,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (roomManager.size() >= MAX_ROOMS) {
       fail(socket, cb, 'SERVER_FULL', 'Server is at capacity, try again later'); return
     }
-    const ip = socket.handshake.address
+    const ip = getClientIp(socket)
     if (!checkRoomCreateLimit(ip).allowed) {
       fail(socket, cb, 'RATE_LIMITED', 'Too many rooms created, please wait'); return
     }
@@ -68,12 +69,13 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const hostId = room.game.hostId
 
     void socket.join(room.game.code)
+    void socket.join(hostId)
     socket.data.roomCode = room.game.code
     socket.data.playerId = hostId
 
     const rejoinSecret = room.getSecret(hostId)!
     logger.info(`Room ${room.game.code} created by ${playerName}`)
-    cb({ code: room.game.code, playerId: hostId, rejoinSecret, game: room.snapshot() })
+    cb({ code: room.game.code, playerId: hostId, rejoinSecret, game: redactGameFor(room.snapshot(), hostId) })
   })
 
   // ─── room:join ───
@@ -90,13 +92,14 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
     const { player, secret: rejoinSecret } = room.addPlayer(playerName, avatar)
     void socket.join(code)
+    void socket.join(player.id)
     socket.data.roomCode = code
     socket.data.playerId = player.id
 
     logger.info(`${playerName} joined room ${code}`)
     socket.to(code).emit('player:joined', { player })
     broadcastGameUpdate(io, code)
-    cb({ playerId: player.id, rejoinSecret, game: room.snapshot() })
+    cb({ playerId: player.id, rejoinSecret, game: redactGameFor(room.snapshot(), player.id) })
   })
 
   // ─── room:rejoin ───
@@ -112,13 +115,14 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
     room.setConnected(playerId, true)
     void socket.join(code)
+    void socket.join(playerId)
     socket.data.roomCode = code
     socket.data.playerId = playerId
 
     logger.info(`Player ${playerId} rejoined room ${code}`)
     socket.to(code).emit('player:reconnected', { playerId })
     broadcastGameUpdate(io, code)
-    cb({ game: room.snapshot() })
+    cb({ game: redactGameFor(room.snapshot(), playerId) })
   })
 
   // ─── room:leave ───
@@ -139,6 +143,10 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can change settings'); return }
     if (room.game.status !== 'LOBBY') { fail(socket, cb, 'WRONG_STATE', 'Cannot change settings after game starts'); return }
 
+    const merged = { ...room.game.settings, ...result.data.settings }
+    if (merged.minFlagsPerPlayer > merged.maxFlagsPerPlayer) {
+      fail(socket, cb, 'INVALID_SETTINGS', 'minFlagsPerPlayer cannot exceed maxFlagsPerPlayer'); return
+    }
     room.updateSettings(result.data.settings)
     broadcastGameUpdate(io, roomCode)
     cb({})
@@ -162,38 +170,6 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
     broadcastGameUpdate(io, roomCode)
     cb({ accepted })
-  })
-
-  // ─── flags:import ───
-  socket.on('flags:import', (payload, cb) => {
-    if (!throttled('flags:import')) { cb({} as never); return }
-    const result = FlagsImportSchema.safeParse(payload)
-    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
-
-    const { roomCode, playerId } = socket.data
-    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
-    const room = roomManager.get(roomCode)
-    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
-    if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
-
-    const lines = result.data.text.split('\n')
-    const valid: string[] = []
-    const rejected: string[] = []
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed.length >= MIN_FLAG_LENGTH && trimmed.length <= MAX_FLAG_LENGTH) {
-        valid.push(trimmed)
-      } else if (trimmed.length > 0) {
-        rejected.push(trimmed)
-      }
-    }
-
-    const flags = valid.map((text) => makeFlag(text, playerId))
-    const accepted = room.addSelfFlags(playerId, flags)
-
-    io.to(roomCode).emit('flags:progress', { playerId, count: accepted })
-    broadcastGameUpdate(io, roomCode)
-    cb({ accepted, rejected })
   })
 
   // ─── flags:assign ───
@@ -242,6 +218,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
       return
     }
 
+    room.clearVotingTimer()
     room.game.currentRoundIndex = next
     const round = room.game.rounds[next]!
     round.status = 'PRESENTING'
@@ -263,16 +240,18 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const round = room.game.rounds[room.game.currentRoundIndex]
     if (!round || round.status !== 'PRESENTING') { fail(socket, cb, 'WRONG_STATE', 'Round not in PRESENTING state'); return }
 
+    const targetRound = room.game.currentRoundIndex
     round.status = 'VOTING'
     round.votingEndsAt = Date.now() + room.game.settings.votingTimeSeconds * 1000
     broadcastGameUpdate(io, roomCode)
 
-    setTimeout(() => {
+    const handle = setTimeout(() => {
       const r = roomManager.get(roomCode)
-      if (!r) return
+      if (!r || r.game.currentRoundIndex !== targetRound) return
       const cr = r.game.rounds[r.game.currentRoundIndex]
       if (cr?.status === 'VOTING') revealRound(io, r.game.code)
     }, room.game.settings.votingTimeSeconds * 1000)
+    room.setVotingTimer(handle, targetRound)
 
     cb({})
   })
@@ -290,6 +269,8 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
     const round = room.game.rounds[room.game.currentRoundIndex]
     if (!round || round.status !== 'VOTING') { fail(socket, cb, 'WRONG_STATE', 'Voting is not open'); return }
+
+    if (!room.hasPlayer(result.data.guessedPlayerId)) { fail(socket, cb, 'INVALID_GUESS', 'That player is not in this room'); return }
 
     const flag = room.game.flags[round.redFlag.id]
     if (flag?.authorId === playerId) { fail(socket, cb, 'CANNOT_VOTE_OWN', 'Cannot vote for your own flag'); return }
@@ -429,6 +410,7 @@ function revealRound(io: AppServer, roomCode: string): void {
   const round = room.game.rounds[room.game.currentRoundIndex]
   if (!round || round.status === 'REVEAL' || round.status === 'SCOREBOARD') return
 
+  room.clearVotingTimer()
   round.status = 'REVEAL'
   const deltas = computeScoreDeltas(round, room.game.flags, room.game.settings)
   room.applyScoreDeltas(deltas)
@@ -446,6 +428,16 @@ function handleDisconnect(io: AppServer, socket: AppSocket): void {
 
   room.setConnected(playerId, false)
   logger.info(`Player ${playerId} disconnected from room ${roomCode}`)
+
+  if (room.game.hostId === playerId) {
+    const nextHost = Object.values(room.game.players)
+      .filter((p) => p.id !== playerId && p.isConnected)
+      .sort((a, b) => a.joinedAt - b.joinedAt)[0]
+    if (nextHost) {
+      room.transferHost(nextHost.id)
+      logger.info(`Host transferred to ${nextHost.id} in room ${roomCode}`)
+    }
+  }
 
   io.to(roomCode).emit('player:left', { playerId })
   broadcastGameUpdate(io, roomCode)

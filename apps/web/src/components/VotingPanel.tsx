@@ -6,23 +6,18 @@ import { playSound } from '../lib/sounds'
 interface VotingPanelProps {
   players: Player[]
   myPlayerId: PlayerId
-  authorId: PlayerId
+  isOwnFlag: boolean
   myVote?: PlayerId
 }
 
-export function VotingPanel({ players, myPlayerId, authorId, myVote }: VotingPanelProps) {
-  // The AUTHOR can never vote on their own flag. The subject can — and
-  // self-pick is allowed for everyone, so we never disable an avatar
-  // (disabling self would leak the answer).
-  const isAuthor = authorId === myPlayerId
-
+export function VotingPanel({ players, myPlayerId, isOwnFlag, myVote }: VotingPanelProps) {
   function handleVote(guessedPlayerId: PlayerId) {
-    if (isAuthor) return
+    if (isOwnFlag) return
     playSound('vote')
     socket.emit('vote:cast', { guessedPlayerId }, () => {})
   }
 
-  if (isAuthor) {
+  if (isOwnFlag) {
     return (
       <div className="w-full max-w-md mx-auto text-center py-6">
         <p className="text-2xl font-black text-brand-yellow">🤫 You wrote this one</p>

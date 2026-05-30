@@ -4,7 +4,6 @@ import {
   RoomJoinSchema,
   RoomRejoinSchema,
   FlagsSubmitSchema,
-  FlagsImportSchema,
   FlagsAssignSchema,
   VoteCastSchema,
   SettingsUpdateSchema,
@@ -71,16 +70,6 @@ describe('FlagsSubmitSchema', () => {
   })
   it('rejects a flag over 200 chars', () => {
     expect(FlagsSubmitSchema.safeParse({ flags: ['A'.repeat(201)] }).success).toBe(false)
-  })
-})
-
-describe('FlagsImportSchema', () => {
-  it('accepts text within limit', () => {
-    expect(FlagsImportSchema.safeParse({ text: 'Flag one\nFlag two\nFlag three' }).success).toBe(true)
-  })
-  it('rejects text over the byte limit', () => {
-    // (200 + 1) * 50 = 10050 limit
-    expect(FlagsImportSchema.safeParse({ text: 'A'.repeat(10051) }).success).toBe(false)
   })
 })
 

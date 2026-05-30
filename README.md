@@ -8,7 +8,7 @@ A multiplayer party game where players submit their personal red flags, then vot
 # Install dependencies
 pnpm install
 
-# Copy env file and add your OpenAI key
+# Copy env file and add your Anthropic key
 cp .env.example apps/server/.env
 
 # Start both apps in dev mode
@@ -28,7 +28,7 @@ Then open http://localhost:5173 on your phone and share the room code!
 
 - **Frontend:** React 18 + Vite + Tailwind CSS + Framer Motion
 - **Backend:** Express + Socket.io
-- **LLM:** OpenAI gpt-4o-mini (themes and orders flags)
+- **LLM:** Anthropic claude-haiku-4-5 (themes and orders flags)
 - **Monorepo:** pnpm workspaces
 
 ## Development
@@ -53,11 +53,10 @@ pnpm test          # run all tests
 2. Select this repo. Railway will detect `railway.json` automatically.
 3. Set these environment variables in the Railway dashboard:
    ```
-   OPENAI_API_KEY=sk-...
+   ANTHROPIC_API_KEY=sk-ant-...
    CORS_ORIGIN=https://your-vercel-url.vercel.app   ← fill after Vercel deploy
    NODE_ENV=production
    PORT=3001
-   OPENAI_MODEL=gpt-4o-mini
    ```
 4. Deploy. Note the Railway public URL (e.g. `https://your-app.up.railway.app`).
 5. Verify: `curl https://your-app.up.railway.app/health` should return

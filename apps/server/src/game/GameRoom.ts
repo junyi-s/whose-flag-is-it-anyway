@@ -24,6 +24,9 @@ export class GameRoom {
   private rejoinSecrets = new Map<PlayerId, string>()
   private llmCallCount = 0
   private lastGeneratingAt = 0
+  /** Auto-reveal timer; cleared on manual reveal or round advance to prevent stale fires. */
+  private votingTimerHandle?: ReturnType<typeof setTimeout>
+  private votingTimerRound = -1
 
   constructor(code: RoomCode, hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>) {
     const hostId = uuidv4()
@@ -188,6 +191,22 @@ export class GameRoom {
   flagById(flagId: RedFlagId): RedFlag | undefined {
     return this.game.flags[flagId]
   }
+
+  setVotingTimer(handle: ReturnType<typeof setTimeout>, roundIndex: number): void {
+    this.clearVotingTimer()
+    this.votingTimerHandle = handle
+    this.votingTimerRound = roundIndex
+  }
+
+  clearVotingTimer(): void {
+    if (this.votingTimerHandle !== undefined) {
+      clearTimeout(this.votingTimerHandle)
+      this.votingTimerHandle = undefined
+      this.votingTimerRound = -1
+    }
+  }
+
+  get activeVotingRound(): number { return this.votingTimerRound }
 
   snapshot(): Game {
     return JSON.parse(JSON.stringify(this.game)) as Game

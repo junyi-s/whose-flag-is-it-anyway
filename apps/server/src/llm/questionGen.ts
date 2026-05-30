@@ -1,6 +1,6 @@
 import type { LlmOrderingResult, RedFlag } from '@whose-flag/shared'
 import { LlmOrderingResultSchema } from '@whose-flag/shared'
-import { getOpenAIClient } from './openai.js'
+import { getAnthropicClient } from './anthropic.js'
 import { SYSTEM_PROMPT, buildUserPrompt } from './prompts.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -11,7 +11,7 @@ import {
 } from '../config.js'
 
 const TIMEOUT_MS = 20_000
-const MODEL = process.env['OPENAI_MODEL'] ?? 'gpt-4o-mini'
+const MODEL = process.env['ANTHROPIC_MODEL'] ?? 'claude-haiku-4-5-20251001'
 
 // ─── Global abuse-protection state (module-level singletons) ────────────────
 //
@@ -66,20 +66,19 @@ export function getLlmStats() {
 // ─── Core LLM call (no guards here — guards are in orderFlags) ───────────────
 
 async function callLlm(flags: RedFlag[], signal: AbortSignal): Promise<LlmOrderingResult> {
-  const client = getOpenAIClient()
-  const response = await client.chat.completions.create(
+  const client = getAnthropicClient()
+  const response = await client.messages.create(
     {
       model: MODEL,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildUserPrompt(flags) },
-      ],
+      max_tokens: 1024,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildUserPrompt(flags) }],
     },
     { signal },
   )
 
-  const content = response.choices[0]?.message.content
+  const block = response.content[0]
+  const content = block?.type === 'text' ? block.text : null
   if (!content) throw new Error('Empty LLM response')
 
   const parsed: unknown = JSON.parse(content)
@@ -151,7 +150,7 @@ export async function orderFlags(flags: RedFlag[], roomCode: string): Promise<Ll
         (err as { status: number }).status === 429
 
       if (isRateLimit && retryOnRateLimit) {
-        logger.warn(`${tag} rate-limited by OpenAI, retrying in 2s…`)
+        logger.warn(`${tag} rate-limited by Anthropic, retrying in 2s…`)
         await new Promise((r) => setTimeout(r, 2_000))
         return attempt(false)
       }

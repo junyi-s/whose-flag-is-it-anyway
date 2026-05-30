@@ -1,13 +1,13 @@
 import { create } from 'zustand'
-import type { Game, PlayerId } from '@whose-flag/shared'
+import type { GameView, PlayerId } from '@whose-flag/shared'
 
 interface GameStore {
-  game: Game | null
+  game: GameView | null
   playerId: string | null
   error: { code: string; message: string } | null
   lastDeltas: Record<PlayerId, number> | null
   isReconnecting: boolean
-  setGame: (game: Game) => void
+  setGame: (game: GameView) => void
   setPlayerId: (id: string) => void
   setError: (err: { code: string; message: string } | null) => void
   setLastDeltas: (deltas: Record<PlayerId, number> | null) => void

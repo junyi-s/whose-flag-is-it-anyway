@@ -1,4 +1,4 @@
-import type { AvatarConfig, Game, GameSettings, Player, PlayerId, RedFlagId, RoomCode, Round } from './types.js'
+import type { AvatarConfig, Game, GameSettings, GameView, Player, PlayerId, RedFlagId, RoomCode, Round } from './types.js'
 
 // ─── Client → Server event payloads ───
 
@@ -24,10 +24,6 @@ export interface FlagsSubmitPayload {
   flags: string[]
 }
 
-export interface FlagsImportPayload {
-  text: string
-}
-
 export interface FlagsAssignPayload {
   subjectId: PlayerId
   flags: string[]
@@ -49,7 +45,6 @@ export interface ClientToServerEvents {
   'room:rejoin': (payload: RoomRejoinPayload, cb: (res: RoomRejoinResponse) => void) => void
   'room:leave': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'flags:submit': (payload: FlagsSubmitPayload, cb: (res: FlagsSubmitResponse) => void) => void
-  'flags:import': (payload: FlagsImportPayload, cb: (res: FlagsImportResponse) => void) => void
   'flags:assign': (payload: FlagsAssignPayload, cb: (res: FlagsAssignResponse) => void) => void
   'game:start': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:next': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
@@ -64,7 +59,7 @@ export interface ClientToServerEvents {
 // ─── Server → Client event payloads ───
 
 export interface GameUpdatedPayload {
-  game: Game
+  game: GameView
 }
 
 export interface PlayerJoinedPayload {
@@ -127,26 +122,21 @@ export interface RoomCreateResponse {
   code: RoomCode
   playerId: PlayerId
   rejoinSecret: string
-  game: Game
+  game: GameView
 }
 
 export interface RoomJoinResponse {
   playerId: PlayerId
   rejoinSecret: string
-  game: Game
+  game: GameView
 }
 
 export interface RoomRejoinResponse {
-  game: Game
+  game: GameView
 }
 
 export interface FlagsSubmitResponse {
   accepted: number
-}
-
-export interface FlagsImportResponse {
-  accepted: number
-  rejected: string[]
 }
 
 export interface FlagsAssignResponse {
