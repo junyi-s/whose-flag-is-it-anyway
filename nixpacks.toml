@@ -5,4 +5,4 @@ cmds = ["pnpm install --frozen-lockfile"]
 cmds = ["pnpm --filter @whose-flag/shared build && pnpm --filter @whose-flag/server build"]
 
 [start]
-cmd = "pnpm --filter @whose-flag/server start"
+cmd = "node apps/server/dist/index.js"
