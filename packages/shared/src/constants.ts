@@ -14,6 +14,8 @@ export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ' // no I, O for clar
 export const DEFAULT_VOTING_SECONDS = 20
 export const DEFAULT_POINTS_CORRECT = 100
 export const DEFAULT_POINTS_FOOLED = 50
+export const RARE_GUESS_BONUS_MAX = 100
+export const STEALTH_BONUS_MAX = 100
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   minFlagsPerPlayer: MIN_FLAGS_PER_PLAYER,

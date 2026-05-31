@@ -31,6 +31,7 @@ function emitError(socket: AppSocket, code: string, message: string): void {
 
 // Always call cb so acknowledgement promises resolve on the client
 function fail<T>(socket: AppSocket, cb: (r: T) => void, code: string, message: string): void {
+  logger.warn(`[reject] room=${socket.data.roomCode ?? '-'} player=${socket.data.playerId ?? '-'} code=${code} — ${message}`)
   emitError(socket, code, message)
   cb({} as T)
 }
@@ -212,6 +213,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const next = nextRoundIndex(room.game)
     if (next === null) {
       room.game.status = 'FINAL_RESULTS'
+      logger.info(`[room:${roomCode}] →FINAL_RESULTS`)
       broadcastGameUpdate(io, roomCode)
       io.to(roomCode).emit('game:ended', { finalScores: { ...room.game.scores } })
       cb({})
@@ -219,7 +221,9 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     }
 
     room.clearVotingTimer()
+    const prev = room.game.currentRoundIndex
     room.game.currentRoundIndex = next
+    logger.info(`[room:${roomCode}] round ${prev}→${next} PRESENTING`)
     const round = room.game.rounds[next]!
     round.status = 'PRESENTING'
     round.startedAt = Date.now()
@@ -243,13 +247,17 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const targetRound = room.game.currentRoundIndex
     round.status = 'VOTING'
     round.votingEndsAt = Date.now() + room.game.settings.votingTimeSeconds * 1000
+    logger.info(`[room:${roomCode}] round ${targetRound} VOTING (${room.game.settings.votingTimeSeconds}s timer)`)
     broadcastGameUpdate(io, roomCode)
 
     const handle = setTimeout(() => {
       const r = roomManager.get(roomCode)
       if (!r || r.game.currentRoundIndex !== targetRound) return
       const cr = r.game.rounds[r.game.currentRoundIndex]
-      if (cr?.status === 'VOTING') revealRound(io, r.game.code)
+      if (cr?.status === 'VOTING') {
+        logger.info(`[room:${roomCode}] round ${targetRound} voting timer expired → auto-reveal`)
+        revealRound(io, r.game.code)
+      }
     }, room.game.settings.votingTimeSeconds * 1000)
     room.setVotingTimer(handle, targetRound)
 
@@ -276,6 +284,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (flag?.authorId === playerId) { fail(socket, cb, 'CANNOT_VOTE_OWN', 'Cannot vote for your own flag'); return }
 
     round.votes[playerId] = result.data.guessedPlayerId
+    logger.debug(`[room:${roomCode}] round ${room.game.currentRoundIndex} vote:cast player=${playerId} guessed=${result.data.guessedPlayerId}`)
     io.to(roomCode).emit('round:vote', { voterId: playerId })
     broadcastGameUpdate(io, roomCode)
     cb({})
@@ -305,6 +314,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (!round || round.status !== 'REVEAL') { fail(socket, cb, 'WRONG_STATE', 'Round not in REVEAL state'); return }
 
     round.status = 'SCOREBOARD'
+    logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} SCOREBOARD`)
     broadcastGameUpdate(io, roomCode)
     cb({})
   })
@@ -345,6 +355,7 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
       fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return
     }
     room.game.status = 'SUBMITTING'
+    logger.info(`[room:${roomCode}] LOBBY→SUBMITTING`)
     broadcastGameUpdate(io, roomCode)
     cb({} as T)
     return
@@ -360,6 +371,7 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
   }
 
   room.game.status = 'GENERATING'
+  logger.info(`[room:${roomCode}] SUBMITTING→GENERATING`)
   broadcastGameUpdate(io, roomCode)
 
   const flagValues = Object.values(room.game.flags)
@@ -393,6 +405,7 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
   const rounds = buildRounds(orderedFlags)
   room.setRounds(rounds)
   room.game.status = 'PLAYING'
+  logger.info(`[room:${roomCode}] GENERATING→PLAYING`)
   room.game.currentRoundIndex = 0
   const firstRound = room.game.rounds[0]!
   firstRound.status = 'PRESENTING'
@@ -413,6 +426,7 @@ function revealRound(io: AppServer, roomCode: string): void {
   room.clearVotingTimer()
   round.status = 'REVEAL'
   const deltas = computeScoreDeltas(round, room.game.flags, room.game.settings)
+  logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} revealed — deltas ${JSON.stringify(deltas)}`)
   room.applyScoreDeltas(deltas)
 
   broadcastGameUpdate(io, roomCode)

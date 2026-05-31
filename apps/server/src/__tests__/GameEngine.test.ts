@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeScoreDeltas, nextRoundIndex, randomShuffleFlags, buildRounds, makeFlag } from '../game/GameEngine.js'
 import type { Game, Round, RedFlag } from '@whose-flag/shared'
-import { DEFAULT_GAME_SETTINGS } from '@whose-flag/shared'
+import { DEFAULT_GAME_SETTINGS, computeRoundScoring } from '@whose-flag/shared'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -38,14 +38,17 @@ describe('computeScoreDeltas', () => {
     const deltas = computeScoreDeltas(round, flagsMap(flag), SETTINGS)
     expect(deltas[BOB]).toBeUndefined()
     expect(deltas[CAROL]).toBe(50)
+    expect(deltas[ALICE]).toBe(100)  // stealth: all 1 vote was wrong
   })
 
-  it('awards nobody when a voter guesses themselves (wrong self-vote)', () => {
+  it('awards subject stealth bonus when the only voter self-votes wrong', () => {
     const flag = makeFlag('Late to everything', ALICE)
-    // BOB votes for himself — not ALICE, not another player, so nobody scores
+    // BOB votes for himself — wrong self-vote; nobody scores in the loop, but
+    // ALICE (subject) earns the stealth bonus because all votes were wrong
     const round = makeRound(flag, { [BOB]: BOB })
     const deltas = computeScoreDeltas(round, flagsMap(flag), SETTINGS)
-    expect(Object.keys(deltas)).toHaveLength(0)
+    expect(deltas[ALICE]).toBe(100)
+    expect(deltas[BOB]).toBeUndefined()
   })
 
   it('subject correctly self-recognises an assigned flag and scores', () => {
@@ -54,7 +57,7 @@ describe('computeScoreDeltas', () => {
     // BOB votes for himself → correct (BOB is the subject)
     const round = makeRound(flag, { [BOB]: BOB, [CAROL]: ALICE })
     const deltas = computeScoreDeltas(round, flagsMap(flag), SETTINGS)
-    expect(deltas[BOB]).toBe(100)   // correct self-pick
+    expect(deltas[BOB]).toBe(200)   // correct (100) + rare (50) + stealth (50)
     expect(deltas[ALICE]).toBe(50)  // CAROL voted ALICE (wrong) → ALICE gets fool points
   })
 
@@ -71,6 +74,48 @@ describe('computeScoreDeltas', () => {
     const round = makeRound(flag, {})
     const deltas = computeScoreDeltas(round, flagsMap(flag), SETTINGS)
     expect(Object.keys(deltas)).toHaveLength(0)
+  })
+})
+
+// ─── computeRoundScoring ────────────────────────────────────────────────────
+
+const DAN = 'player-dan'
+const EVE = 'player-eve'
+
+describe('computeRoundScoring', () => {
+  it('lone correct voter among 4 gets rare bonus', () => {
+    // 1 of 4 votes == subject (ALICE); other 3 vote for CAROL
+    const votes = { [BOB]: ALICE, [CAROL]: CAROL, [DAN]: CAROL, [EVE]: CAROL }
+    const { deltas, breakdown } = computeRoundScoring(votes, ALICE, SETTINGS)
+    // total=4, correct=1, rare=round(100*(1-1/4))=75
+    expect(deltas[BOB]).toBe(175)
+    expect(breakdown[BOB]).toContainEqual({ reason: 'correct', points: 100 })
+    expect(breakdown[BOB]).toContainEqual({ reason: 'rare', points: 75 })
+  })
+
+  it('awards subject stealth when nobody guesses correctly', () => {
+    // All 3 voters guess CAROL, subject is ALICE
+    const votes = { [BOB]: CAROL, [DAN]: CAROL, [EVE]: CAROL }
+    const { deltas, breakdown } = computeRoundScoring(votes, ALICE, SETTINGS)
+    // total=3, correct=0, stealth=round(100*(3/3))=100
+    expect(deltas[ALICE]).toBe(100)
+    expect(breakdown[ALICE]).toContainEqual({ reason: 'stealth', points: 100 })
+  })
+
+  it('sole correct voter (total=1) gets full rare bonus', () => {
+    // 2-player game: only one eligible voter; they got it right
+    const votes = { [BOB]: ALICE }
+    const { deltas, breakdown } = computeRoundScoring(votes, ALICE, SETTINGS)
+    // total=1, correctCount=1 → rare = RARE_GUESS_BONUS_MAX (100)
+    expect(deltas[BOB]).toBe(200)  // correct (100) + rare (100)
+    expect(breakdown[BOB]).toContainEqual({ reason: 'correct', points: 100 })
+    expect(breakdown[BOB]).toContainEqual({ reason: 'rare', points: 100 })
+  })
+
+  it('returns empty deltas and breakdown when no votes cast', () => {
+    const { deltas, breakdown } = computeRoundScoring({}, ALICE, SETTINGS)
+    expect(Object.keys(deltas)).toHaveLength(0)
+    expect(Object.keys(breakdown)).toHaveLength(0)
   })
 })
 

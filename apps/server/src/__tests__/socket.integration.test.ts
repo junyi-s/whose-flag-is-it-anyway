@@ -228,7 +228,40 @@ describe('Socket integration', () => {
     bob.disconnect()
   }, 10_000)
 
-  // ── 4. Redaction end-to-end ───────────────────────────────────────────────
+  // ── 4. Stealth / rare scoring ─────────────────────────────────────────────
+
+  it('round:revealed scoreDeltas includes stealth bonus when the only vote is a self-vote', async () => {
+    const { alice, aliceId, bob, bobId, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    const round0FlagId = room.game.rounds[0]!.redFlag.id
+    const round0Flag = room.game.flags[round0FlagId]!
+    const subjectId = round0Flag.subjectId
+    const authorId = round0Flag.authorId
+
+    // The non-author player votes for themselves (wrong self-vote) — nobody scores in the
+    // loop, but the subject earns the stealth bonus because all votes were wrong.
+    const nonAuthorSocket = authorId === aliceId ? bob : alice
+    const nonAuthorId = authorId === aliceId ? bobId : aliceId
+
+    const revealedPromise = new Promise<{ scoreDeltas: Record<string, number> }>((resolve) => {
+      alice.once('round:revealed', resolve)
+    })
+
+    await ackP(alice, 'round:openVoting', {})
+    await ackP(nonAuthorSocket, 'vote:cast', { guessedPlayerId: nonAuthorId })
+    await ackP(alice, 'round:reveal', {})
+
+    const { scoreDeltas } = await revealedPromise
+    // total=1, correct=0, wrong=1 → stealth = round(100 * 1/1) = 100
+    expect(scoreDeltas[subjectId]).toBe(100)
+    expect(scoreDeltas[nonAuthorId]).toBeUndefined()
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 5. Redaction end-to-end ────────────────────────────────────────────────
 
   it("Bob's game:updated during VOTING has no subjectId or authorId; both appear after REVEAL", async () => {
     const { alice, bob, code } = await advanceToPlaying(url)

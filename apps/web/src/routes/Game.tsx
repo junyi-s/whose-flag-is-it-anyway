@@ -81,7 +81,7 @@ export function Game() {
             )}
 
             {round.status === 'REVEAL' && (
-              <RoundResults round={round} flag={flag} players={game.players} />
+              <RoundResults round={round} flag={flag} players={game.players} settings={game.settings} />
             )}
 
             {round.status === 'SCOREBOARD' && (

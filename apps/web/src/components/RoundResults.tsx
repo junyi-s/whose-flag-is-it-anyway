@@ -1,16 +1,27 @@
 import { motion } from 'framer-motion'
-import type { Player, PlayerId, RedFlagView, RoundView } from '@whose-flag/shared'
+import type { Player, PlayerId, RedFlagView, RoundView, GameSettings } from '@whose-flag/shared'
+import { computeRoundScoring } from '@whose-flag/shared'
+
+const REASON_LABELS: Record<string, string> = {
+  correct: '🎯',
+  rare: '💎 rare',
+  fooled: '🃏 fooled',
+  stealth: '🕵️ stealth',
+}
 
 interface RoundResultsProps {
   round: RoundView
   flag: RedFlagView
   players: Record<PlayerId, Player>
+  settings: GameSettings
 }
 
-export function RoundResults({ round, flag, players }: RoundResultsProps) {
+export function RoundResults({ round, flag, players, settings }: RoundResultsProps) {
   const subject = flag.subjectId ? players[flag.subjectId] : undefined
   const author = flag.authorId ? players[flag.authorId] : undefined
   const wasPlanted = flag.authorId !== undefined && flag.authorId !== flag.subjectId
+
+  const { breakdown } = computeRoundScoring(round.votes, flag.subjectId, settings)
 
   // Tally votes per guessed player: who did voters point at?
   const tally: Record<PlayerId, PlayerId[]> = {}
@@ -50,7 +61,7 @@ export function RoundResults({ round, flag, players }: RoundResultsProps) {
             transition={{ delay: 0.4 }}
             className="text-brand-yellow font-bold mt-1"
           >
-            …and {author?.name} planted it 👀
+            …and {author?.name ?? 'someone'} planted it 👀
           </motion.p>
         )}
       </motion.div>
@@ -72,7 +83,7 @@ export function RoundResults({ round, flag, players }: RoundResultsProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-sm font-bold truncate ${isAnswer ? 'text-green-400' : 'text-white/70'}`}>
-                    {player?.name}
+                    {player?.name ?? '?'}
                     {isAnswer && ' ✓'}
                   </span>
                   <span className="text-xs font-black text-white/50">
@@ -87,6 +98,15 @@ export function RoundResults({ round, flag, players }: RoundResultsProps) {
                     transition={{ type: 'spring', stiffness: 120, damping: 20, delay: 0.2 }}
                   />
                 </div>
+                {breakdown[pid] && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {breakdown[pid].map(({ reason, points }, i) => (
+                      <span key={i} className="text-xs rounded bg-white/10 px-1.5 py-0.5 text-white/60">
+                        {REASON_LABELS[reason]} +{points}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )

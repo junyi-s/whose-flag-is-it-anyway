@@ -40,10 +40,10 @@ function AppInner() {
   const { load, clear } = usePersistedIdentity()
 
   useEffect(() => {
+    if (!socket.connected) socket.connect()
+
     const identity = load()
     if (!identity) return
-
-    if (!socket.connected) socket.connect()
 
     socket.emit('room:rejoin', { code: identity.code, playerId: identity.playerId, secret: identity.secret }, (res) => {
       if (!res.game) {

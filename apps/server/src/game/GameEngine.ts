@@ -6,28 +6,14 @@ import type {
   RedFlagId,
   Round,
 } from '@whose-flag/shared'
+import { computeRoundScoring } from '@whose-flag/shared'
 
 export function computeScoreDeltas(
   round: Round,
   flags: Record<RedFlagId, RedFlag>,
   settings: Game['settings'],
 ): Record<PlayerId, number> {
-  const deltas: Record<PlayerId, number> = {}
-  // Answer is the SUBJECT, not the author
-  const correctSubjectId = flags[round.redFlag.id]?.subjectId
-
-  for (const [voterId, guessedId] of Object.entries(round.votes)) {
-    if (guessedId === correctSubjectId) {
-      // Correct guess (includes subject recognising their own assigned flag)
-      deltas[voterId] = (deltas[voterId] ?? 0) + settings.pointsForCorrectGuess
-    } else if (guessedId !== voterId) {
-      // Wrong guess on someone else → that player fooled this voter
-      deltas[guessedId] = (deltas[guessedId] ?? 0) + settings.pointsForFoolingOthers
-    }
-    // Wrong self-vote (guessedId === voterId) → nobody scores
-  }
-
-  return deltas
+  return computeRoundScoring(round.votes, flags[round.redFlag.id]?.subjectId, settings).deltas
 }
 
 export function nextRoundIndex(game: Game): number | null {
