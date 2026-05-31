@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "scripts": {
-    "dev": "concurrently \"pnpm --filter @whose-flag/web dev\" \"pnpm --filter @whose-flag/server dev\"",
+    "dev": "pnpm --filter @whose-flag/shared build && concurrently \"pnpm --filter @whose-flag/web dev\" \"pnpm --filter @whose-flag/server dev\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
