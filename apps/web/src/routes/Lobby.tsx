@@ -4,13 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../components/ui/Button'
 import { PlayerAvatar } from '../components/PlayerAvatar'
 import { useGameStore } from '../stores/gameStore'
+import { usePersistedIdentity } from '../hooks/usePersistedIdentity'
 import { socket } from '../lib/socket'
 import type { GameSettings } from '@whose-flag/shared'
 
 export function Lobby() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
-  const { game, playerId } = useGameStore()
+  const { game, playerId, reset } = useGameStore()
+  const { clear } = usePersistedIdentity()
   const [showSettings, setShowSettings] = useState(false)
   const [starting, setStarting] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -47,6 +49,19 @@ export function Lobby() {
 
   function handleSettingChange(key: keyof GameSettings, value: number | boolean) {
     socket.emit('settings:update', { settings: { [key]: value } }, () => {})
+  }
+
+  function handleLeave() {
+    socket.emit('room:leave', {}, () => {})
+    clear()
+    reset()
+    navigate('/')
+  }
+
+  function handleCloseRoom() {
+    if (!window.confirm('Close the room for everyone?')) return
+    // Server broadcasts room:closed; AppInner sends us home and clears identity.
+    socket.emit('room:close', {}, () => {})
   }
 
   return (
@@ -132,6 +147,27 @@ export function Lobby() {
           Waiting for host to start the game…
         </p>
       )}
+
+      {/* Exit controls */}
+      <div className="flex items-center justify-center gap-4 text-sm mt-auto pt-4">
+        <button
+          onClick={handleLeave}
+          className="text-white/40 hover:text-white/70 font-bold transition-colors"
+        >
+          Leave room
+        </button>
+        {isHost && (
+          <>
+            <span className="text-white/15">•</span>
+            <button
+              onClick={handleCloseRoom}
+              className="text-brand-red/70 hover:text-brand-red font-bold transition-colors"
+            >
+              Close room
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }

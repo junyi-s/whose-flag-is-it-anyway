@@ -14,16 +14,24 @@ import {
   type ServerToClientEvents,
 } from '@whose-flag/shared'
 import { roomManager } from '../game/roomManager.js'
+import type { GameRoom } from '../game/GameRoom.js'
 import { buildRounds, computeScoreDeltas, makeFlag, nextRoundIndex, randomShuffleFlags } from '../game/GameEngine.js'
 import { orderFlags } from '../llm/questionGen.js'
 import { logger } from '../utils/logger.js'
 import { checkRoomCreateLimit, getClientIp } from '../middleware/connectionLimits.js'
 import { allowEvent } from '../middleware/eventThrottle.js'
 import { touchRoom } from '../middleware/roomGc.js'
-import { MAX_ROOMS } from '../config.js'
+import { HOST_MIGRATION_GRACE_MS, MAX_ROOMS } from '../config.js'
 
 type AppServer = Server<ClientToServerEvents, ServerToClientEvents>
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents>
+
+// Host-migration grace (A.5). Mutable so integration tests can shorten it.
+let hostMigrationGraceMs = HOST_MIGRATION_GRACE_MS
+/** Test-only: override the host-migration grace window. */
+export function __setHostMigrationGraceForTests(ms: number): void {
+  hostMigrationGraceMs = ms
+}
 
 function emitError(socket: AppSocket, code: string, message: string): void {
   socket.emit('error', { code, message })
@@ -105,30 +113,44 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
 
   // ─── room:rejoin ───
   socket.on('room:rejoin', (payload, cb) => {
-    const result = RoomRejoinSchema.safeParse(payload)
-    if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
-    const { code, playerId, secret } = result.data
-    const room = roomManager.get(code)
+    void (async () => {
+      const result = RoomRejoinSchema.safeParse(payload)
+      if (!result.success) { fail(socket, cb, 'VALIDATION_ERROR', result.error.message); return }
+      const { code, playerId, secret } = result.data
+      const room = roomManager.get(code)
 
-    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
-    if (!room.hasPlayer(playerId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
-    if (!room.verifySecret(playerId, secret)) { fail(socket, cb, 'BAD_SECRET', 'Invalid rejoin secret'); return }
+      if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', `Room ${code} does not exist`); return }
+      if (!room.hasPlayer(playerId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Player ID not found'); return }
+      if (!room.verifySecret(playerId, secret)) { fail(socket, cb, 'BAD_SECRET', 'Invalid rejoin secret'); return }
 
-    room.setConnected(playerId, true)
-    void socket.join(code)
-    void socket.join(playerId)
-    socket.data.roomCode = code
-    socket.data.playerId = playerId
+      room.setConnected(playerId, true)
+      void socket.join(code)
+      void socket.join(playerId)
+      socket.data.roomCode = code
+      socket.data.playerId = playerId
 
-    logger.info(`Player ${playerId} rejoined room ${code}`)
-    socket.to(code).emit('player:reconnected', { playerId })
-    broadcastGameUpdate(io, code)
-    cb({ game: redactGameFor(room.snapshot(), playerId) })
+      // A.3 — drop any stale sockets still bound to this player (e.g. an orphaned
+      // tab or a pre-refresh socket that hasn't timed out). The new socket has
+      // already joined the playerId room, so the stale socket's disconnect will
+      // see a live peer and skip the offline-mark (A.4).
+      const peers = await io.in(playerId).fetchSockets()
+      for (const peer of peers) {
+        if (peer.id !== socket.id) peer.disconnect(true)
+      }
+
+      // A.5 — the host returned (e.g. refresh) within the grace window: keep them host.
+      if (room.game.hostId === playerId) room.cancelHostMigration()
+
+      logger.info(`Player ${playerId} rejoined room ${code}`)
+      socket.to(code).emit('player:reconnected', { playerId })
+      broadcastGameUpdate(io, code)
+      cb({ game: redactGameFor(room.snapshot(), playerId) })
+    })()
   })
 
   // ─── room:leave ───
   socket.on('room:leave', (_payload, cb) => {
-    handleDisconnect(io, socket)
+    handleLeave(io, socket)
     cb({})
   })
 
@@ -336,9 +358,46 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     cb({})
   })
 
+  // ─── game:end (host-only) → FINAL_RESULTS ───
+  socket.on('game:end', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can end the game'); return }
+    if (room.game.status !== 'PLAYING' && room.game.status !== 'GENERATING') {
+      fail(socket, cb, 'WRONG_STATE', 'Can only end a game that is in progress'); return
+    }
+
+    room.clearVotingTimer()
+    room.game.status = 'FINAL_RESULTS'
+    logger.info(`[room:${roomCode}] host ended game early →FINAL_RESULTS`)
+    broadcastGameUpdate(io, roomCode)
+    io.to(roomCode).emit('game:ended', { finalScores: { ...room.game.scores } })
+    cb({})
+  })
+
+  // ─── room:close (host-only) → destroy the room ───
+  socket.on('room:close', (_payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can close the room'); return }
+
+    room.clearVotingTimer()
+    room.cancelHostMigration()
+    room.game.status = 'CLOSED'
+    logger.info(`[room:${roomCode}] host closed the room`)
+    // Notify everyone before deleting — socket.io rooms outlive our roomManager entry.
+    io.to(roomCode).emit('room:closed', { reason: 'Host closed the room' })
+    roomManager.delete(roomCode)
+    cb({})
+  })
+
   // ─── disconnect ───
   socket.on('disconnect', () => {
-    handleDisconnect(io, socket)
+    void handleDisconnect(io, socket)
   })
 }
 
@@ -433,31 +492,32 @@ function revealRound(io: AppServer, roomCode: string): void {
   io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas })
 }
 
-function handleDisconnect(io: AppServer, socket: AppSocket): void {
-  const { roomCode, playerId } = socket.data
-  if (!roomCode || !playerId) return
+/** Pick the longest-connected remaining player as the new host. No-op if none. */
+function migrateHost(room: GameRoom, roomCode: string): void {
+  const next = Object.values(room.game.players)
+    .filter((p) => p.isConnected)
+    .sort((a, b) => a.joinedAt - b.joinedAt)[0]
+  if (next) {
+    room.transferHost(next.id)
+    logger.info(`Host transferred to ${next.id} in room ${roomCode}`)
+  }
+}
 
+/** Destroy the room immediately if empty, or after a grace period if everyone is offline. */
+function maybeDestroyIfEmpty(roomCode: string): void {
   const room = roomManager.get(roomCode)
   if (!room) return
+  const players = Object.values(room.game.players)
 
-  room.setConnected(playerId, false)
-  logger.info(`Player ${playerId} disconnected from room ${roomCode}`)
-
-  if (room.game.hostId === playerId) {
-    const nextHost = Object.values(room.game.players)
-      .filter((p) => p.id !== playerId && p.isConnected)
-      .sort((a, b) => a.joinedAt - b.joinedAt)[0]
-    if (nextHost) {
-      room.transferHost(nextHost.id)
-      logger.info(`Host transferred to ${nextHost.id} in room ${roomCode}`)
-    }
+  if (players.length === 0) {
+    room.cancelHostMigration()
+    room.clearVotingTimer()
+    roomManager.delete(roomCode)
+    logger.info(`Room ${roomCode} destroyed (empty)`)
+    return
   }
 
-  io.to(roomCode).emit('player:left', { playerId })
-  broadcastGameUpdate(io, roomCode)
-
-  const allGone = Object.values(room.game.players).every((p) => !p.isConnected)
-  if (allGone) {
+  if (players.every((p) => !p.isConnected)) {
     setTimeout(() => {
       const r = roomManager.get(roomCode)
       if (!r) return
@@ -467,4 +527,80 @@ function handleDisconnect(io: AppServer, socket: AppSocket): void {
       }
     }, 60_000)
   }
+}
+
+/**
+ * Explicit leave (room:leave). In LOBBY/SUBMITTING the player is removed entirely
+ * (frees their slot, name, and flags); once PLAYING they are kept for scoring and
+ * only marked offline. Host migrates immediately — an explicit leave is not a refresh.
+ */
+function handleLeave(io: AppServer, socket: AppSocket): void {
+  const { roomCode, playerId } = socket.data
+  if (!roomCode || !playerId) return
+  const room = roomManager.get(roomCode)
+  if (!room) return
+
+  const wasHost = room.game.hostId === playerId
+  const removable = room.game.status === 'LOBBY' || room.game.status === 'SUBMITTING'
+
+  if (removable) {
+    room.removePlayer(playerId)
+    logger.info(`Player ${playerId} left and was removed from room ${roomCode}`)
+  } else {
+    room.setConnected(playerId, false)
+    logger.info(`Player ${playerId} left room ${roomCode} (kept for scoring)`)
+  }
+
+  if (wasHost) {
+    room.cancelHostMigration()
+    migrateHost(room, roomCode)
+  }
+
+  // Detach this socket so its eventual disconnect doesn't re-run leave logic.
+  void socket.leave(roomCode)
+  void socket.leave(playerId)
+  socket.data.roomCode = undefined
+  socket.data.playerId = undefined
+
+  io.to(roomCode).emit('player:left', { playerId })
+  broadcastGameUpdate(io, roomCode)
+  maybeDestroyIfEmpty(roomCode)
+}
+
+/**
+ * Passive disconnect (socket dropped, not an explicit leave). Reconnection-aware:
+ * if another live socket still represents this player (multi-tab), do nothing.
+ * Host migration is deferred (A.5) so a refresh — which drops then re-opens a
+ * socket — does not hand off host.
+ */
+async function handleDisconnect(io: AppServer, socket: AppSocket): Promise<void> {
+  const { roomCode, playerId } = socket.data
+  if (!roomCode || !playerId) return
+
+  const room = roomManager.get(roomCode)
+  if (!room) return
+
+  // A.4 — another socket still represents this player? They're still present.
+  const peers = await io.in(playerId).fetchSockets()
+  if (peers.some((s) => s.id !== socket.id)) return
+
+  room.setConnected(playerId, false)
+  logger.info(`Player ${playerId} disconnected from room ${roomCode}`)
+
+  // A.5 — defer host migration; cancelled by room:rejoin within the grace window.
+  if (room.game.hostId === playerId) {
+    const handle = setTimeout(() => {
+      const r = roomManager.get(roomCode)
+      if (!r) return
+      if (r.game.hostId !== playerId) return            // already migrated/changed
+      if (r.game.players[playerId]?.isConnected) return  // host came back
+      migrateHost(r, roomCode)
+      broadcastGameUpdate(io, roomCode)
+    }, hostMigrationGraceMs)
+    room.scheduleHostMigration(handle)
+  }
+
+  io.to(roomCode).emit('player:left', { playerId })
+  broadcastGameUpdate(io, roomCode)
+  maybeDestroyIfEmpty(roomCode)
 }

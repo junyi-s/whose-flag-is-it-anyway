@@ -101,12 +101,25 @@ export function Game() {
 
       {/* Host controls / waiting state */}
       <div className="fixed bottom-0 inset-x-0 bg-bg-card/95 backdrop-blur border-t border-white/10 px-4 py-3">
-        <div className="max-w-md mx-auto">
+        <div className="max-w-md mx-auto space-y-2">
           <HostControls
             status={round.status}
             isHost={isHost}
             isLastRound={isLastRound}
           />
+          {isHost && (
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  if (!window.confirm('End the game now and jump to the final results?')) return
+                  socket.emit('game:end', {}, () => {})
+                }}
+                className="text-brand-red/70 hover:text-brand-red text-sm font-bold transition-colors"
+              >
+                End game early
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

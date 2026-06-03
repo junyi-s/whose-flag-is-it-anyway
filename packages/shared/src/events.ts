@@ -54,6 +54,10 @@ export interface ClientToServerEvents {
   'round:reveal': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'settings:update': (payload: SettingsUpdatePayload, cb: (res: EmptyResponse) => void) => void
   'game:playAgain': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
+  /** Host-only: end an in-progress game now → FINAL_RESULTS (scores preserved). */
+  'game:end': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
+  /** Host-only: abort and destroy the room (LOBBY/SUBMITTING, where no scores exist). */
+  'room:close': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
 }
 
 // ─── Server → Client event payloads ───
@@ -96,6 +100,10 @@ export interface GameEndedPayload {
   finalScores: Record<PlayerId, number>
 }
 
+export interface RoomClosedPayload {
+  reason?: string
+}
+
 export interface ErrorPayload {
   code: string
   message: string
@@ -113,6 +121,7 @@ export interface ServerToClientEvents {
   'round:vote': (payload: RoundVotePayload) => void
   'round:revealed': (payload: RoundRevealedPayload) => void
   'game:ended': (payload: GameEndedPayload) => void
+  'room:closed': (payload: RoomClosedPayload) => void
   'error': (payload: ErrorPayload) => void
 }
 

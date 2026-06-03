@@ -14,9 +14,10 @@ vi.mock('../llm/questionGen.js', () => ({
   orderFlags: vi.fn().mockResolvedValue(null),
 }))
 
-import { registerHandlers } from '../socket/handlers.js'
+import { registerHandlers, __setHostMigrationGraceForTests } from '../socket/handlers.js'
 import { roomManager } from '../game/roomManager.js'
 import { removeBucket } from '../middleware/eventThrottle.js'
+import { __resetRoomCreateLimitForTests } from '../middleware/connectionLimits.js'
 import type { GameView, RoomCreateResponse, RoomJoinResponse } from '@whose-flag/shared'
 
 // ─── Infrastructure ───────────────────────────────────────────────────────────
@@ -126,6 +127,8 @@ describe('Socket integration', () => {
     const srv = await startServer()
     url = srv.url
     stopServer = srv.stop
+    // Short host-migration grace so deferred-migration tests stay fast.
+    __setHostMigrationGraceForTests(300)
   })
 
   afterAll(async () => {
@@ -133,11 +136,15 @@ describe('Socket integration', () => {
   })
 
   afterEach(() => {
-    // Clear any pending voting timers and purge rooms between tests
+    // Clear any pending voting / host-migration timers and purge rooms between tests
     for (const code of roomManager.activeCodes()) {
-      roomManager.get(code)?.clearVotingTimer()
+      const room = roomManager.get(code)
+      room?.clearVotingTimer()
+      room?.cancelHostMigration()
       roomManager.delete(code)
     }
+    // Reset the per-IP room-create rate limit so later tests can still create rooms.
+    __resetRoomCreateLimitForTests()
   })
 
   // ── 1. Host migration ─────────────────────────────────────────────────────
@@ -303,6 +310,118 @@ describe('Socket integration', () => {
     expect(revealFlag.subjectId).toBe(correctSubjectId)
     // Text still visible
     expect(typeof revealFlag.text).toBe('string')
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 6. Host refresh keeps host (A.3/A.4/A.5) ───────────────────────────────
+
+  it('rejoining from a new socket kicks the stale socket but keeps the player online and host', async () => {
+    const alice = connect(url)
+    const bob = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+    ])
+
+    const createRes = await ackP<RoomCreateResponse>(alice, 'room:create', { playerName: 'Alice', avatar: AVATAR })
+    const { code, playerId: aliceId, rejoinSecret } = createRes
+    await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+
+    // Alice "refreshes": a fresh socket rejoins as the same player while the old one is still live.
+    const staleKicked = new Promise<void>((r) => alice.once('disconnect', () => r()))
+    const alice2 = connect(url)
+    await new Promise<void>((r) => alice2.once('connect', r))
+    await ackP(alice2, 'room:rejoin', { code, playerId: aliceId, secret: rejoinSecret })
+
+    await staleKicked              // A.3 — the old socket was disconnected
+    await sleep(450)              // past the 300ms grace window
+
+    const room = roomManager.get(code)!
+    expect(room.game.players[aliceId]!.isConnected).toBe(true) // A.4 — never marked offline
+    expect(room.game.hostId).toBe(aliceId)                     // A.5 — host preserved across refresh
+
+    alice2.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 7. Host game:end ───────────────────────────────────────────────────────
+
+  it('host game:end ends an in-progress game immediately', async () => {
+    const { alice, bob, code } = await advanceToPlaying(url)
+
+    const endedPromise = new Promise<{ finalScores: Record<string, number> }>((resolve) =>
+      bob.once('game:ended', resolve),
+    )
+    await ackP(alice, 'game:end', {})
+    await endedPromise
+
+    expect(roomManager.get(code)!.game.status).toBe('FINAL_RESULTS')
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  it('rejects game:end from a non-host', async () => {
+    const { alice, bob, code } = await advanceToPlaying(url)
+
+    const errorPromise = new Promise<{ code: string }>((resolve) => bob.once('error', resolve))
+    await ackP(bob, 'game:end', {})
+    expect((await errorPromise).code).toBe('NOT_HOST')
+    expect(roomManager.get(code)!.game.status).toBe('PLAYING')
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 8. Host room:close ─────────────────────────────────────────────────────
+
+  it('host room:close destroys the room and notifies everyone', async () => {
+    const alice = connect(url)
+    const bob = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+    ])
+
+    const { code } = await ackP<RoomCreateResponse>(alice, 'room:create', { playerName: 'Alice', avatar: AVATAR })
+    await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+
+    const closedPromise = new Promise<void>((r) => bob.once('room:closed', () => r()))
+    await ackP(alice, 'room:close', {})
+    await closedPromise
+
+    expect(roomManager.get(code)).toBeUndefined()
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 9. Leave during SUBMITTING removes the player ──────────────────────────
+
+  it('leaving during SUBMITTING removes the player, their flags, and frees the name', async () => {
+    const alice = connect(url)
+    const bob = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+    ])
+
+    const { code } = await ackP<RoomCreateResponse>(alice, 'room:create', { playerName: 'Alice', avatar: AVATAR })
+    const joinRes = await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+    const bobId = joinRes.playerId
+
+    await ackP(alice, 'game:start', {}) // LOBBY → SUBMITTING
+    await ackP(bob, 'flags:submit', { flags: ['Always late', 'Never replies', 'Leaves mess', 'Talks loud', 'Forgets plans'] })
+
+    await ackP(bob, 'room:leave', {})
+
+    const room = roomManager.get(code)!
+    expect(room.hasPlayer(bobId)).toBe(false)
+    expect(Object.values(room.game.flags).some((f) => f.authorId === bobId)).toBe(false)
+    // Name freed — a new player can take "Bob"
+    expect(room.isNameTaken('Bob')).toBe(false)
 
     alice.disconnect()
     bob.disconnect()

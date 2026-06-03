@@ -27,6 +27,8 @@ export class GameRoom {
   /** Auto-reveal timer; cleared on manual reveal or round advance to prevent stale fires. */
   private votingTimerHandle?: ReturnType<typeof setTimeout>
   private votingTimerRound = -1
+  /** Deferred host migration (A.5); cancelled if the host reconnects within the grace window. */
+  private hostMigrationTimer?: ReturnType<typeof setTimeout>
 
   constructor(code: RoomCode, hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>) {
     const hostId = uuidv4()
@@ -104,6 +106,32 @@ export class GameRoom {
 
   updateSettings(settings: Partial<GameSettings>): void {
     Object.assign(this.game.settings, settings)
+  }
+
+  /** Remove a player entirely (LOBBY/SUBMITTING leave): frees slot, name, secret, and their flags. */
+  removePlayer(playerId: PlayerId): void {
+    delete this.game.players[playerId]
+    delete this.game.scores[playerId]
+    this.rejoinSecrets.delete(playerId)
+    // Drop any flags this player authored — self-flags and call-outs they planted —
+    // so no phantom subject/author ends up in the built rounds.
+    for (const [id, flag] of Object.entries(this.game.flags)) {
+      if (flag.authorId === playerId || flag.subjectId === playerId) {
+        delete this.game.flags[id]
+      }
+    }
+  }
+
+  scheduleHostMigration(handle: ReturnType<typeof setTimeout>): void {
+    this.cancelHostMigration()
+    this.hostMigrationTimer = handle
+  }
+
+  cancelHostMigration(): void {
+    if (this.hostMigrationTimer !== undefined) {
+      clearTimeout(this.hostMigrationTimer)
+      this.hostMigrationTimer = undefined
+    }
   }
 
   transferHost(newHostId: PlayerId): void {

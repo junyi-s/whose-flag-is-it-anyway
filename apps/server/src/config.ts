@@ -57,3 +57,12 @@ export const ROOM_IDLE_TTL_MS = int('ROOM_IDLE_TTL_MS', 30 * 60_000)
 
 /** No room lives longer than this regardless of activity (T6). */
 export const ROOM_MAX_LIFETIME_MS = int('ROOM_MAX_LIFETIME_MS', 6 * 60 * 60_000)
+
+// ─── Reconnection / host migration (A.5) ─────────────────────────────────
+
+/**
+ * Grace period before a disconnected host is replaced. A browser refresh drops
+ * the old socket and reconnects within ~1s, so this window keeps the host as
+ * host across a refresh while still migrating if they are genuinely gone.
+ */
+export const HOST_MIGRATION_GRACE_MS = int('HOST_MIGRATION_GRACE_MS', 20_000)

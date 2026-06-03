@@ -36,29 +36,55 @@ function ReconnectingBanner() {
 function AppInner() {
   useGameSocket()
   const navigate = useNavigate()
-  const { setGame, setPlayerId } = useGameStore()
+  const { setGame, setPlayerId, reset, setNotice } = useGameStore()
+  const roomClosed = useGameStore((s) => s.roomClosed)
+  const setRoomClosed = useGameStore((s) => s.setRoomClosed)
   const { load, clear } = usePersistedIdentity()
 
+  // Host closed the room: drop our identity and game state, then go home.
   useEffect(() => {
-    if (!socket.connected) socket.connect()
+    if (!roomClosed) return
+    clear()
+    reset()
+    setRoomClosed(false)
+    setNotice('The host closed the room.')
+    navigate('/')
+  }, [roomClosed, clear, reset, setRoomClosed, setNotice, navigate])
 
+  useEffect(() => {
     const identity = load()
-    if (!identity) return
 
-    socket.emit('room:rejoin', { code: identity.code, playerId: identity.playerId, secret: identity.secret }, (res) => {
-      if (!res.game) {
-        clear()
-        return
-      }
-      setGame(res.game)
-      setPlayerId(identity.playerId)
+    function attemptRejoin() {
+      if (!identity) return
+      socket.emit('room:rejoin', { code: identity.code, playerId: identity.playerId, secret: identity.secret }, (res) => {
+        if (!res.game) {
+          clear()
+          return
+        }
+        // Don't override if user has already explicitly joined a different room
+        const currentGame = useGameStore.getState().game
+        if (currentGame && currentGame.code !== res.game.code) return
+        setGame(res.game)
+        setPlayerId(identity.playerId)
 
-      const { status, code } = res.game
-      if (status === 'LOBBY') navigate(`/lobby/${code}`)
-      else if (status === 'SUBMITTING' || status === 'GENERATING') navigate(`/submit/${code}`)
-      else if (status === 'PLAYING') navigate(`/game/${code}`)
-      else if (status === 'FINAL_RESULTS') navigate(`/results/${code}`)
-    })
+        const { status, code } = res.game
+        if (status === 'LOBBY') navigate(`/lobby/${code}`)
+        else if (status === 'SUBMITTING' || status === 'GENERATING') navigate(`/submit/${code}`)
+        else if (status === 'PLAYING') navigate(`/game/${code}`)
+        else if (status === 'FINAL_RESULTS') navigate(`/results/${code}`)
+      })
+    }
+
+    if (socket.connected) {
+      attemptRejoin()
+    } else {
+      socket.once('connect', attemptRejoin)
+      socket.connect()
+    }
+
+    return () => {
+      socket.off('connect', attemptRejoin)
+    }
   // Only run on mount
   }, [])
 

@@ -52,6 +52,11 @@ export function enforceConnectionCap(io: AppServer, socket: Socket): boolean {
 /** ip → list of timestamps when `room:create` was called */
 const createLog = new Map<string, number[]>()
 
+/** Test-only: clear the per-IP room-create history between tests. */
+export function __resetRoomCreateLimitForTests(): void {
+  createLog.clear()
+}
+
 export function checkRoomCreateLimit(ip: string): { allowed: boolean } {
   const now = Date.now()
   const windowStart = now - ROOM_CREATE_WINDOW_MS

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../components/ui/Button'
 import { PlayerAvatar } from '../components/PlayerAvatar'
 import { useGameStore } from '../stores/gameStore'
+import { usePersistedIdentity } from '../hooks/usePersistedIdentity'
 import { socket } from '../lib/socket'
 import { parseImportText } from '../lib/fileImport'
 import {
@@ -16,7 +17,8 @@ import type { Player, PlayerId, RedFlagView } from '@whose-flag/shared'
 export function SubmitFlags() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
-  const { game, playerId } = useGameStore()
+  const { game, playerId, reset } = useGameStore()
+  const { clear } = usePersistedIdentity()
 
   useEffect(() => {
     if (!game || !code) return
@@ -24,6 +26,20 @@ export function SubmitFlags() {
     if (game.status === 'FINAL_RESULTS') navigate(`/results/${code}`)
     if (game.status === 'LOBBY') navigate(`/lobby/${code}`)
   }, [game?.status, code, navigate])
+
+  function handleLeave() {
+    if (!window.confirm('Leave the game? Your flags will be removed.')) return
+    socket.emit('room:leave', {}, () => {})
+    clear()
+    reset()
+    navigate('/')
+  }
+
+  function handleCloseRoom() {
+    if (!window.confirm('Close the room for everyone? This ends the game for all players.')) return
+    // Server broadcasts room:closed; AppInner sends us home and clears identity.
+    socket.emit('room:close', {}, () => {})
+  }
 
   if (!game || !playerId || !code) return <LoadingScreen />
   if (game.status === 'GENERATING') return <GeneratingScreen />
@@ -84,7 +100,7 @@ export function SubmitFlags() {
 
       {/* Fixed bottom bar */}
       <div className="fixed bottom-0 inset-x-0 bg-bg-card/95 backdrop-blur border-t border-white/10 px-4 py-3">
-        <div className="max-w-xl mx-auto">
+        <div className="max-w-xl mx-auto space-y-2">
           {isHost ? (
             <HostStartButton allPlayersReady={allPlayersReady} />
           ) : (
@@ -94,6 +110,25 @@ export function SubmitFlags() {
               minFlags={minFlags}
             />
           )}
+          <div className="flex items-center justify-center gap-4 text-sm">
+            <button
+              onClick={handleLeave}
+              className="text-white/40 hover:text-white/70 font-bold transition-colors"
+            >
+              Leave game
+            </button>
+            {isHost && (
+              <>
+                <span className="text-white/15">•</span>
+                <button
+                  onClick={handleCloseRoom}
+                  className="text-brand-red/70 hover:text-brand-red font-bold transition-colors"
+                >
+                  Close room
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

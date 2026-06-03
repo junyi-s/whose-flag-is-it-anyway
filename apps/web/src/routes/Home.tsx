@@ -14,7 +14,7 @@ type ModalMode = 'create' | 'join' | null
 
 export function Home() {
   const navigate = useNavigate()
-  const { setGame, setPlayerId, error, setError } = useGameStore()
+  const { setGame, setPlayerId, error, setError, notice, setNotice } = useGameStore()
   const { save } = usePersistedIdentity()
 
   const [modal, setModal] = useState<ModalMode>(null)
@@ -39,7 +39,6 @@ export function Home() {
     if (!name.trim() || loading) return
     setLoading(true)
     setError(null)
-    if (!socket.connected) socket.connect()
     socket.emit(
       'room:create',
       { playerName: name.trim(), avatar: { emoji, bgColor: color } },
@@ -58,7 +57,6 @@ export function Home() {
     if (!name.trim() || joinCode.trim().length !== 4 || loading) return
     setLoading(true)
     setError(null)
-    if (!socket.connected) socket.connect()
     socket.emit(
       'room:join',
       { code: joinCode.trim().toUpperCase(), playerName: name.trim(), avatar: { emoji, bgColor: color } },
@@ -114,6 +112,23 @@ export function Home() {
 
   return (
     <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center px-4 gap-8">
+      {notice && (
+        <motion.div
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed top-4 inset-x-4 max-w-sm mx-auto bg-bg-card border border-white/10 rounded-xl px-4 py-3 flex items-center gap-3 z-50"
+          role="status"
+        >
+          <span className="flex-1 text-white/80 text-sm font-bold">{notice}</span>
+          <button
+            onClick={() => setNotice(null)}
+            className="text-white/30 hover:text-white/70 text-xl leading-none"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </motion.div>
+      )}
       <motion.div
         className="text-center"
         initial={{ opacity: 0, y: -30 }}
