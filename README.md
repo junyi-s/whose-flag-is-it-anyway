@@ -22,7 +22,35 @@ Then open http://localhost:5173 on your phone and share the room code!
 1. Host creates a room and shares the 4-letter code
 2. Players join and submit their personal red flags (2–20 players)
 3. Red flags are revealed one at a time — vote on whose you think it is
-4. Score points for correct guesses, and bonus points for fooling others
+4. Score points for correct guesses, and bonus points for planting convincing fakes
+
+## Game Modes
+
+### 🎭 Classic (Deception)
+The full social deduction experience. Points for:
+- **Correct guess** — identified who the flag belongs to
+- **Rare bonus** — scaled reward when few others got it right
+- **Stealth** (author) — your self-flag went undetected
+- **Fooling** (call-out author) — you planted a flag on someone else and it fooled people
+
+No points go to the person who was guessed wrong — only the *author* earns deception credit.
+
+### ⚡ Quickdraw (Speed)
+Pure race mode. Same flags, but:
+- First correct guess scores most; points step down the order
+- **Changing your answer sends you to the back of the line** — commit fast!
+- No stealth/fooling bonuses — it's all about reading fast
+
+### 📺 Presenter / Shared Screen
+One device can run the game on a TV or shared screen:
+- Toggle "Run on this screen (I won't play)" in the Lobby
+- Presenter sees a big flag display, live vote tally, and host controls
+- Does not compete, vote, or appear on the scoreboard
+- If the presenter disconnects, host migrates to a competing player automatically
+
+### ⏭ Auto-Advance
+Enable auto-advance in settings to walk REVEAL→SCOREBOARD→next automatically after a dwell.
+Any host action (or the Skip button) cancels the pending timer immediately.
 
 ## Tech Stack
 
