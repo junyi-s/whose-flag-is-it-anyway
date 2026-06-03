@@ -3,6 +3,7 @@ import {
   FlagsAssignSchema,
   FlagsSubmitSchema,
   GamePlayAgainSchema,
+  GameSettingsFullSchema,
   MIN_PLAYERS,
   RoomCreateSchema,
   RoomJoinSchema,
@@ -167,8 +168,9 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (room.game.status !== 'LOBBY') { fail(socket, cb, 'WRONG_STATE', 'Cannot change settings after game starts'); return }
 
     const merged = { ...room.game.settings, ...result.data.settings }
-    if (merged.minFlagsPerPlayer > merged.maxFlagsPerPlayer) {
-      fail(socket, cb, 'INVALID_SETTINGS', 'minFlagsPerPlayer cannot exceed maxFlagsPerPlayer'); return
+    const fullCheck = GameSettingsFullSchema.safeParse(merged)
+    if (!fullCheck.success) {
+      fail(socket, cb, 'INVALID_SETTINGS', fullCheck.error.issues[0]?.message ?? 'Invalid settings'); return
     }
     room.updateSettings(result.data.settings)
     broadcastGameUpdate(io, roomCode)

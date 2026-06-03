@@ -7,7 +7,9 @@ import {
   FlagsAssignSchema,
   VoteCastSchema,
   SettingsUpdateSchema,
+  GameSettingsFullSchema,
 } from '@whose-flag/shared'
+import { DEFAULT_GAME_SETTINGS } from '@whose-flag/shared'
 
 const VALID_UUID   = '123e4567-e89b-12d3-a456-426614174000'
 const VALID_CODE   = 'ABCD'
@@ -101,5 +103,34 @@ describe('SettingsUpdateSchema', () => {
   it('rejects votingTimeSeconds out of range', () => {
     expect(SettingsUpdateSchema.safeParse({ settings: { votingTimeSeconds: 3 } }).success).toBe(false)
     expect(SettingsUpdateSchema.safeParse({ settings: { votingTimeSeconds: 999 } }).success).toBe(false)
+  })
+  it('accepts new mode and bonus fields', () => {
+    expect(SettingsUpdateSchema.safeParse({ settings: { gameMode: 'speed', speedFirstPoints: 200 } }).success).toBe(true)
+    expect(SettingsUpdateSchema.safeParse({ settings: { rareBonusMax: 50, foolingBonusMax: 30 } }).success).toBe(true)
+  })
+})
+
+describe('GameSettingsFullSchema — cross-field invariants', () => {
+  it('accepts default settings', () => {
+    expect(GameSettingsFullSchema.safeParse(DEFAULT_GAME_SETTINGS).success).toBe(true)
+  })
+
+  it('rejects foolingBonusMax >= pointsForCorrectGuess', () => {
+    const bad = { ...DEFAULT_GAME_SETTINGS, foolingBonusMax: 100 }
+    const result = GameSettingsFullSchema.safeParse(bad)
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toContain('foolingBonusMax')
+    }
+  })
+
+  it('rejects speedMinPoints > speedFirstPoints', () => {
+    const bad = { ...DEFAULT_GAME_SETTINGS, speedMinPoints: 200, speedFirstPoints: 100 }
+    expect(GameSettingsFullSchema.safeParse(bad).success).toBe(false)
+  })
+
+  it('rejects minFlagsPerPlayer > maxFlagsPerPlayer', () => {
+    const bad = { ...DEFAULT_GAME_SETTINGS, minFlagsPerPlayer: 10, maxFlagsPerPlayer: 5 }
+    expect(GameSettingsFullSchema.safeParse(bad).success).toBe(false)
   })
 })

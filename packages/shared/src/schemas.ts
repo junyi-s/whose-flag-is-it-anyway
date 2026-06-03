@@ -43,6 +43,37 @@ export const GameSettingsPartialSchema = z.object({
   autoAdvanceSeconds: z.number().int().min(3).max(30).optional(),
 })
 
+/**
+ * Full settings validator — merges incoming partial with current settings and
+ * enforces cross-field invariants (e.g. fooling < correct).
+ * Used by the settings:update handler after merging.
+ */
+export const GameSettingsFullSchema = z.object({
+  gameMode: z.enum(['classic', 'speed']),
+  minFlagsPerPlayer: z.number().int().min(1).max(50),
+  maxFlagsPerPlayer: z.number().int().min(1).max(50),
+  votingTimeSeconds: z.number().int().min(5).max(120),
+  pointsForCorrectGuess: z.number().int().min(1).max(1000),
+  rareBonusMax: z.number().int().min(0).max(1000),
+  stealthBonusMax: z.number().int().min(0).max(1000),
+  foolingBonusMax: z.number().int().min(0).max(999),
+  speedFirstPoints: z.number().int().min(1).max(1000),
+  speedStep: z.number().int().min(0).max(500),
+  speedMinPoints: z.number().int().min(0).max(1000),
+  shuffleFlagOrder: z.boolean(),
+  autoAdvance: z.boolean(),
+  autoAdvanceSeconds: z.number().int().min(3).max(30),
+}).refine(
+  (s) => s.foolingBonusMax < s.pointsForCorrectGuess,
+  { message: 'foolingBonusMax must be less than pointsForCorrectGuess', path: ['foolingBonusMax'] },
+).refine(
+  (s) => s.speedMinPoints <= s.speedFirstPoints,
+  { message: 'speedMinPoints must not exceed speedFirstPoints', path: ['speedMinPoints'] },
+).refine(
+  (s) => s.minFlagsPerPlayer <= s.maxFlagsPerPlayer,
+  { message: 'minFlagsPerPlayer cannot exceed maxFlagsPerPlayer', path: ['minFlagsPerPlayer'] },
+)
+
 // ─── Inbound event schemas (Client → Server) ───
 
 export const RoomCreateSchema = z.object({
