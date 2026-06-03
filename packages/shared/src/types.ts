@@ -3,6 +3,9 @@ export type RoomCode = string;       // 4 uppercase letters, e.g. "BJQK"
 export type PlayerId = string;       // UUID
 export type RedFlagId = string;      // UUID
 
+// ─── Game mode ───
+export type GameMode = 'classic' | 'speed';
+
 // ─── Player ───
 export interface Player {
   id: PlayerId;
@@ -11,6 +14,8 @@ export interface Player {
   isHost: boolean;
   isConnected: boolean;
   joinedAt: number;                   // Unix ms
+  /** Non-competing participant — does not submit flags, vote, or appear in competitive scoreboard. */
+  spectator: boolean;
 }
 
 export interface AvatarConfig {
@@ -32,12 +37,22 @@ export interface RedFlag {
 
 // ─── Game Settings (configured pre-game) ───
 export interface GameSettings {
+  gameMode: GameMode;                 // Default 'classic'
   minFlagsPerPlayer: number;          // Default 5
   maxFlagsPerPlayer: number;          // Default 50
   votingTimeSeconds: number;          // Default 20
   pointsForCorrectGuess: number;      // Default 100
-  pointsForFoolingOthers: number;     // Default 50 per fooled player
+  // Classic scoring knobs
+  rareBonusMax: number;               // Default 100
+  stealthBonusMax: number;            // Default 80
+  foolingBonusMax: number;            // Default 50 (< pointsForCorrectGuess enforced)
+  // Speed scoring knobs
+  speedFirstPoints: number;           // Default 100
+  speedStep: number;                  // Default 20
+  speedMinPoints: number;             // Default 20
   shuffleFlagOrder: boolean;          // Default true (LLM orders if true)
+  autoAdvance: boolean;               // Default false — kiosk auto-advance post-vote chain
+  autoAdvanceSeconds: number;         // Default 10
 }
 
 // ─── Game State Machine ───
@@ -61,8 +76,12 @@ export interface Round {
   redFlag: RedFlag;
   status: RoundStatus;
   votes: Record<PlayerId, PlayerId>;  // voter -> guessed-as
+  /** Server-only: competitors in order their current vote was locked (speed mode). Stripped by redactGameFor before REVEAL. */
+  voteOrder?: PlayerId[];
   startedAt: number;                  // Unix ms
   votingEndsAt?: number;              // Unix ms when timer expires
+  /** Set during auto-advance; Unix ms when the next transition fires. Clients render a countdown from it. */
+  advanceAt?: number;
 }
 
 // ─── Game ───
@@ -104,6 +123,8 @@ export interface RoundView {
   votes: Record<PlayerId, PlayerId>;
   startedAt: number;
   votingEndsAt?: number;
+  /** Present when auto-advance is active; Unix ms when next transition fires. */
+  advanceAt?: number;
 }
 
 /**

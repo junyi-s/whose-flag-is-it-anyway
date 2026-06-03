@@ -1,4 +1,5 @@
 import type { AvatarConfig, Game, GameSettings, GameView, Player, PlayerId, RedFlagId, RoomCode, Round } from './types.js'
+import type { ScoreLine } from './scoring.js'
 
 // ─── Client → Server event payloads ───
 
@@ -6,6 +7,8 @@ export interface RoomCreatePayload {
   playerName: string
   avatar: AvatarConfig
   settings?: Partial<GameSettings>
+  /** True to join as a non-competing presenter (spectator: true). */
+  spectator?: boolean
 }
 
 export interface RoomJoinPayload {
@@ -33,6 +36,11 @@ export interface VoteCastPayload {
   guessedPlayerId: PlayerId
 }
 
+export interface VoteCastResponse {
+  /** 1-based position in voteOrder (speed mode only). */
+  order?: number
+}
+
 export interface SettingsUpdatePayload {
   settings: Partial<GameSettings>
 }
@@ -50,7 +58,7 @@ export interface ClientToServerEvents {
   'round:next': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:openVoting': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'round:scoreboard': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
-  'vote:cast': (payload: VoteCastPayload, cb: (res: EmptyResponse) => void) => void
+  'vote:cast': (payload: VoteCastPayload, cb: (res: VoteCastResponse) => void) => void
   'round:reveal': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
   'settings:update': (payload: SettingsUpdatePayload, cb: (res: EmptyResponse) => void) => void
   'game:playAgain': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
@@ -94,6 +102,8 @@ export interface RoundVotePayload {
 export interface RoundRevealedPayload {
   round: Round
   scoreDeltas: Record<PlayerId, number>
+  /** Authoritative per-player score breakdown — rendered by clients instead of recomputing. */
+  breakdown: Record<PlayerId, ScoreLine[]>
 }
 
 export interface GameEndedPayload {

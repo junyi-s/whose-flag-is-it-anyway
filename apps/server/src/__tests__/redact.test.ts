@@ -20,8 +20,8 @@ function baseGame(overrides: Partial<Game> = {}): Game {
     hostId: ALICE,
     settings: DEFAULT_GAME_SETTINGS,
     players: {
-      [ALICE]: { id: ALICE, name: 'Alice', avatar: { emoji: '🐱', bgColor: '#FF0000' }, isHost: true, isConnected: true, joinedAt: 1 },
-      [BOB]:   { id: BOB,   name: 'Bob',   avatar: { emoji: '🐶', bgColor: '#00FF00' }, isHost: false, isConnected: true, joinedAt: 2 },
+      [ALICE]: { id: ALICE, name: 'Alice', avatar: { emoji: '🐱', bgColor: '#FF0000' }, isHost: true, isConnected: true, joinedAt: 1, spectator: false },
+      [BOB]:   { id: BOB,   name: 'Bob',   avatar: { emoji: '🐶', bgColor: '#00FF00' }, isHost: false, isConnected: true, joinedAt: 2, spectator: false },
     },
     flags: {},
     rounds: [],
@@ -152,9 +152,9 @@ describe('PLAYING / VOTING — votes are per-viewer only', () => {
   const game = baseGame({
     status: 'PLAYING',
     players: {
-      [ALICE]: { id: ALICE, name: 'Alice', avatar: { emoji: '🐱', bgColor: '#FF0000' }, isHost: true, isConnected: true, joinedAt: 1 },
-      [BOB]:   { id: BOB, name: 'Bob', avatar: { emoji: '🐶', bgColor: '#00FF00' }, isHost: false, isConnected: true, joinedAt: 2 },
-      [CAROL]: { id: CAROL, name: 'Carol', avatar: { emoji: '🦊', bgColor: '#0000FF' }, isHost: false, isConnected: true, joinedAt: 3 },
+      [ALICE]: { id: ALICE, name: 'Alice', avatar: { emoji: '🐱', bgColor: '#FF0000' }, isHost: true, isConnected: true, joinedAt: 1, spectator: false },
+      [BOB]:   { id: BOB, name: 'Bob', avatar: { emoji: '🐶', bgColor: '#00FF00' }, isHost: false, isConnected: true, joinedAt: 2, spectator: false },
+      [CAROL]: { id: CAROL, name: 'Carol', avatar: { emoji: '🦊', bgColor: '#0000FF' }, isHost: false, isConnected: true, joinedAt: 3, spectator: false },
     },
     flags: { f1: flag },
     rounds: [round],

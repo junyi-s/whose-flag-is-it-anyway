@@ -205,12 +205,12 @@ function SettingsPanel({
         onChange={(v) => onChange('pointsForCorrectGuess', v)}
       />
       <SettingRow
-        label="Points: fooling others"
-        value={settings.pointsForFoolingOthers}
+        label="Points: fooling (author)"
+        value={settings.foolingBonusMax}
         min={0}
-        max={500}
+        max={499}
         step={25}
-        onChange={(v) => onChange('pointsForFoolingOthers', v)}
+        onChange={(v) => onChange('foolingBonusMax', v)}
       />
     </div>
   )

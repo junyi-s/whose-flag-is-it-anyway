@@ -6,14 +6,21 @@ export function useGameSocket() {
   const setGame = useGameStore((s) => s.setGame)
   const setError = useGameStore((s) => s.setError)
   const setLastDeltas = useGameStore((s) => s.setLastDeltas)
+  const setLastBreakdown = useGameStore((s) => s.setLastBreakdown)
   const setReconnecting = useGameStore((s) => s.setReconnecting)
   const setRoomClosed = useGameStore((s) => s.setRoomClosed)
 
   useEffect(() => {
     socket.on('game:updated', ({ game }) => setGame(game))
     socket.on('error', (err) => setError(err))
-    socket.on('round:revealed', ({ scoreDeltas }) => setLastDeltas(scoreDeltas))
-    socket.on('round:started', () => setLastDeltas(null))
+    socket.on('round:revealed', ({ scoreDeltas, breakdown }) => {
+      setLastDeltas(scoreDeltas)
+      setLastBreakdown(breakdown)
+    })
+    socket.on('round:started', () => {
+      setLastDeltas(null)
+      setLastBreakdown(null)
+    })
     socket.on('room:closed', () => setRoomClosed(true))
     socket.on('disconnect', () => setReconnecting(true))
     socket.on('connect', () => setReconnecting(false))
@@ -29,5 +36,5 @@ export function useGameSocket() {
       socket.off('connect')
       socket.io.off('reconnect')
     }
-  }, [setGame, setError, setLastDeltas, setReconnecting, setRoomClosed])
+  }, [setGame, setError, setLastDeltas, setLastBreakdown, setReconnecting, setRoomClosed])
 }

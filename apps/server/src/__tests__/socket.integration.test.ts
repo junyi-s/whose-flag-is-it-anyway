@@ -260,8 +260,8 @@ describe('Socket integration', () => {
     await ackP(alice, 'round:reveal', {})
 
     const { scoreDeltas } = await revealedPromise
-    // total=1, correct=0, wrong=1 → stealth = round(100 * 1/1) = 100
-    expect(scoreDeltas[subjectId]).toBe(100)
+    // total=1, correct=0, wrong=1 → stealth = round(stealthBonusMax * 1/1) = 80
+    expect(scoreDeltas[subjectId]).toBe(80)
     expect(scoreDeltas[nonAuthorId]).toBeUndefined()
 
     alice.disconnect()

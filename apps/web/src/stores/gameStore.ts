@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import type { GameView, PlayerId } from '@whose-flag/shared'
+import type { ScoreLine } from '@whose-flag/shared'
 
 interface GameStore {
   game: GameView | null
   playerId: string | null
   error: { code: string; message: string } | null
   lastDeltas: Record<PlayerId, number> | null
+  lastBreakdown: Record<PlayerId, ScoreLine[]> | null
   isReconnecting: boolean
   /** Set when the host closes the room; AppInner reacts by sending everyone home. */
   roomClosed: boolean
@@ -15,6 +17,7 @@ interface GameStore {
   setPlayerId: (id: string) => void
   setError: (err: { code: string; message: string } | null) => void
   setLastDeltas: (deltas: Record<PlayerId, number> | null) => void
+  setLastBreakdown: (breakdown: Record<PlayerId, ScoreLine[]> | null) => void
   setReconnecting: (v: boolean) => void
   setRoomClosed: (v: boolean) => void
   setNotice: (n: string | null) => void
@@ -26,6 +29,7 @@ export const useGameStore = create<GameStore>()((set) => ({
   playerId: null,
   error: null,
   lastDeltas: null,
+  lastBreakdown: null,
   isReconnecting: false,
   roomClosed: false,
   notice: null,
@@ -33,8 +37,9 @@ export const useGameStore = create<GameStore>()((set) => ({
   setPlayerId: (playerId) => set({ playerId }),
   setError: (error) => set({ error }),
   setLastDeltas: (lastDeltas) => set({ lastDeltas }),
+  setLastBreakdown: (lastBreakdown) => set({ lastBreakdown }),
   setReconnecting: (isReconnecting) => set({ isReconnecting }),
   setRoomClosed: (roomClosed) => set({ roomClosed }),
   setNotice: (notice) => set({ notice }),
-  reset: () => set({ game: null, playerId: null, error: null, lastDeltas: null, isReconnecting: false }),
+  reset: () => set({ game: null, playerId: null, error: null, lastDeltas: null, lastBreakdown: null, isReconnecting: false }),
 }))

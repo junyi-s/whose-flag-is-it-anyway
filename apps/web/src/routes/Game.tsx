@@ -14,7 +14,7 @@ import { playSound } from '../lib/sounds'
 export function Game() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
-  const { game, playerId, lastDeltas } = useGameStore()
+  const { game, playerId, lastDeltas, lastBreakdown } = useGameStore()
 
   // Navigate away on status changes driven by the server
   useEffect(() => {
@@ -81,7 +81,7 @@ export function Game() {
             )}
 
             {round.status === 'REVEAL' && (
-              <RoundResults round={round} flag={flag} players={game.players} settings={game.settings} />
+              <RoundResults round={round} flag={flag} players={game.players} breakdown={lastBreakdown ?? {}} />
             )}
 
             {round.status === 'SCOREBOARD' && (

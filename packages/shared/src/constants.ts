@@ -13,15 +13,27 @@ export const ROOM_CODE_LENGTH = 4
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ' // no I, O for clarity
 export const DEFAULT_VOTING_SECONDS = 20
 export const DEFAULT_POINTS_CORRECT = 100
-export const DEFAULT_POINTS_FOOLED = 50
-export const RARE_GUESS_BONUS_MAX = 100
-export const STEALTH_BONUS_MAX = 100
+export const DEFAULT_RARE_BONUS_MAX = 100
+export const DEFAULT_STEALTH_BONUS_MAX = 80
+export const DEFAULT_FOOLING_BONUS_MAX = 50
+export const DEFAULT_SPEED_FIRST_POINTS = 100
+export const DEFAULT_SPEED_STEP = 20
+export const DEFAULT_SPEED_MIN_POINTS = 20
+export const DEFAULT_AUTO_ADVANCE_SECONDS = 10
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
+  gameMode: 'classic',
   minFlagsPerPlayer: MIN_FLAGS_PER_PLAYER,
   maxFlagsPerPlayer: MAX_FLAGS_PER_PLAYER,
   votingTimeSeconds: DEFAULT_VOTING_SECONDS,
   pointsForCorrectGuess: DEFAULT_POINTS_CORRECT,
-  pointsForFoolingOthers: DEFAULT_POINTS_FOOLED,
+  rareBonusMax: DEFAULT_RARE_BONUS_MAX,
+  stealthBonusMax: DEFAULT_STEALTH_BONUS_MAX,
+  foolingBonusMax: DEFAULT_FOOLING_BONUS_MAX,
+  speedFirstPoints: DEFAULT_SPEED_FIRST_POINTS,
+  speedStep: DEFAULT_SPEED_STEP,
+  speedMinPoints: DEFAULT_SPEED_MIN_POINTS,
   shuffleFlagOrder: true,
+  autoAdvance: false,
+  autoAdvanceSeconds: DEFAULT_AUTO_ADVANCE_SECONDS,
 }

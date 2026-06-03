@@ -6,14 +6,15 @@ import type {
   RedFlagId,
   Round,
 } from '@whose-flag/shared'
-import { computeRoundScoring } from '@whose-flag/shared'
+import { computeRoundScoring, type RoundScoring } from '@whose-flag/shared'
 
 export function computeScoreDeltas(
   round: Round,
   flags: Record<RedFlagId, RedFlag>,
   settings: Game['settings'],
-): Record<PlayerId, number> {
-  return computeRoundScoring(round.votes, flags[round.redFlag.id]?.subjectId, settings).deltas
+): RoundScoring {
+  const flag = flags[round.redFlag.id]
+  return computeRoundScoring(round, flag?.subjectId, flag?.authorId, settings)
 }
 
 export function nextRoundIndex(game: Game): number | null {

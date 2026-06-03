@@ -27,12 +27,20 @@ export const PlayerIdSchema = z.string().uuid()
 // ─── GameSettings partial (for updates) ───
 
 export const GameSettingsPartialSchema = z.object({
+  gameMode: z.enum(['classic', 'speed']).optional(),
   minFlagsPerPlayer: z.number().int().min(1).max(50).optional(),
   maxFlagsPerPlayer: z.number().int().min(1).max(50).optional(),
   votingTimeSeconds: z.number().int().min(5).max(120).optional(),
-  pointsForCorrectGuess: z.number().int().min(0).max(1000).optional(),
-  pointsForFoolingOthers: z.number().int().min(0).max(1000).optional(),
+  pointsForCorrectGuess: z.number().int().min(1).max(1000).optional(),
+  rareBonusMax: z.number().int().min(0).max(1000).optional(),
+  stealthBonusMax: z.number().int().min(0).max(1000).optional(),
+  foolingBonusMax: z.number().int().min(0).max(999).optional(),
+  speedFirstPoints: z.number().int().min(1).max(1000).optional(),
+  speedStep: z.number().int().min(0).max(500).optional(),
+  speedMinPoints: z.number().int().min(0).max(1000).optional(),
   shuffleFlagOrder: z.boolean().optional(),
+  autoAdvance: z.boolean().optional(),
+  autoAdvanceSeconds: z.number().int().min(3).max(30).optional(),
 })
 
 // ─── Inbound event schemas (Client → Server) ───
@@ -41,6 +49,7 @@ export const RoomCreateSchema = z.object({
   playerName: z.string().min(MIN_NAME_LENGTH).max(MAX_NAME_LENGTH).trim(),
   avatar: AvatarConfigSchema,
   settings: GameSettingsPartialSchema.optional(),
+  spectator: z.boolean().optional(),
 })
 
 export const RoomJoinSchema = z.object({

@@ -86,29 +86,33 @@ export function redactGameFor(game: Game, viewerId: PlayerId): GameView {
       const isOwnFlag = flag.authorId === viewerId
 
       if (round.index < game.currentRoundIndex) {
-        // Past: full info
-        return { ...round, redFlag: toView(flag, isOwnFlag) }
+        // Past: full info except server-only voteOrder
+        const { voteOrder: _vo, ...roundWithoutOrder } = round
+        return { ...roundWithoutOrder, redFlag: toView(flag, isOwnFlag) }
       }
 
       if (round.index === game.currentRoundIndex) {
         if (round.status === 'PRESENTING' || round.status === 'VOTING') {
-          // Current, live: strip answer; only expose viewer's own vote
+          // Current, live: strip answer, voteOrder, and all-but-viewer votes
           const viewerVote: Record<PlayerId, PlayerId> = {}
           const ownVote = round.votes[viewerId]
           if (ownVote !== undefined) viewerVote[viewerId] = ownVote
+          const { voteOrder: _vo, ...roundWithoutOrder } = round
           return {
-            ...round,
+            ...roundWithoutOrder,
             redFlag: toViewStripped(flag, isOwnFlag),
             votes: viewerVote,
           }
         }
-        // REVEAL / SCOREBOARD: answer is now public
-        return { ...round, redFlag: toView(flag, isOwnFlag) }
+        // REVEAL / SCOREBOARD: answer is now public; voteOrder still server-only
+        const { voteOrder: _vo, ...roundWithoutOrder } = round
+        return { ...roundWithoutOrder, redFlag: toView(flag, isOwnFlag) }
       }
 
       // Future: strip everything to prevent peeking
+      const { voteOrder: _vo, ...roundWithoutOrder } = round
       return {
-        ...round,
+        ...roundWithoutOrder,
         redFlag: toViewFuture(flag, isOwnFlag),
         votes: {},
       }
@@ -125,7 +129,8 @@ export function redactGameFor(game: Game, viewerId: PlayerId): GameView {
     }
     const rounds: RoundView[] = game.rounds.map((round) => {
       const flag = game.flags[round.redFlag.id] ?? round.redFlag
-      return { ...round, redFlag: toView(flag, flag.authorId === viewerId) }
+      const { voteOrder: _vo, ...roundWithoutOrder } = round
+      return { ...roundWithoutOrder, redFlag: toView(flag, flag.authorId === viewerId) }
     })
     return { ...base, flags: viewerFlags, rounds }
   }

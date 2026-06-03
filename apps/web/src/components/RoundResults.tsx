@@ -1,29 +1,29 @@
 import { motion } from 'framer-motion'
-import type { Player, PlayerId, RedFlagView, RoundView, GameSettings } from '@whose-flag/shared'
-import { computeRoundScoring } from '@whose-flag/shared'
+import type { Player, PlayerId, RedFlagView, RoundView } from '@whose-flag/shared'
+import type { ScoreLine } from '@whose-flag/shared'
 
 const REASON_LABELS: Record<string, string> = {
-  correct: '🎯',
+  correct: '🎯 correct',
   rare: '💎 rare',
-  fooled: '🃏 fooled',
+  fooling: '🃏 fooled (you planted it)',
   stealth: '🕵️ stealth',
+  speed: '⚡ speed',
 }
 
 interface RoundResultsProps {
   round: RoundView
   flag: RedFlagView
   players: Record<PlayerId, Player>
-  settings: GameSettings
+  /** Authoritative per-player breakdown from the server. */
+  breakdown: Record<PlayerId, ScoreLine[]>
 }
 
-export function RoundResults({ round, flag, players, settings }: RoundResultsProps) {
+export function RoundResults({ round, flag, players, breakdown }: RoundResultsProps) {
   const subject = flag.subjectId ? players[flag.subjectId] : undefined
   const author = flag.authorId ? players[flag.authorId] : undefined
   const wasPlanted = flag.authorId !== undefined && flag.authorId !== flag.subjectId
 
-  const { breakdown } = computeRoundScoring(round.votes, flag.subjectId, settings)
-
-  // Tally votes per guessed player: who did voters point at?
+  // Tally votes per guessed player
   const tally: Record<PlayerId, PlayerId[]> = {}
   for (const [voterId, guessedId] of Object.entries(round.votes)) {
     ;(tally[guessedId] ??= []).push(voterId)
@@ -34,6 +34,8 @@ export function RoundResults({ round, flag, players, settings }: RoundResultsPro
   // sorted by vote count descending.
   const rowIds = new Set<PlayerId>(Object.keys(tally))
   if (flag.subjectId) rowIds.add(flag.subjectId)
+  // Also include any player who earned points (e.g. call-out author)
+  for (const pid of Object.keys(breakdown)) rowIds.add(pid)
   const rows = [...rowIds].sort((a, b) => (tally[b]?.length ?? 0) - (tally[a]?.length ?? 0))
 
   return (
@@ -102,7 +104,7 @@ export function RoundResults({ round, flag, players, settings }: RoundResultsPro
                   <div className="flex flex-wrap gap-1 mt-1">
                     {breakdown[pid].map(({ reason, points }, i) => (
                       <span key={i} className="text-xs rounded bg-white/10 px-1.5 py-0.5 text-white/60">
-                        {REASON_LABELS[reason]} +{points}
+                        {REASON_LABELS[reason] ?? reason} +{points}
                       </span>
                     ))}
                   </div>

@@ -30,7 +30,7 @@ export class GameRoom {
   /** Deferred host migration (A.5); cancelled if the host reconnects within the grace window. */
   private hostMigrationTimer?: ReturnType<typeof setTimeout>
 
-  constructor(code: RoomCode, hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>) {
+  constructor(code: RoomCode, hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>, spectator = false) {
     const hostId = uuidv4()
     const host: Player = {
       id: hostId,
@@ -39,6 +39,7 @@ export class GameRoom {
       isHost: true,
       isConnected: true,
       joinedAt: Date.now(),
+      spectator,
     }
 
     this.game = {
@@ -74,7 +75,7 @@ export class GameRoom {
     )
   }
 
-  addPlayer(name: string, avatar: AvatarConfig): { player: Player; secret: string } {
+  addPlayer(name: string, avatar: AvatarConfig, spectator = false): { player: Player; secret: string } {
     const player: Player = {
       id: uuidv4(),
       name,
@@ -82,6 +83,7 @@ export class GameRoom {
       isHost: false,
       isConnected: true,
       joinedAt: Date.now(),
+      spectator,
     }
     this.game.players[player.id] = player
     this.game.scores[player.id] = 0

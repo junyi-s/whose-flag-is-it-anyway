@@ -73,8 +73,8 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
       fail(socket, cb, 'RATE_LIMITED', 'Too many rooms created, please wait'); return
     }
 
-    const { playerName, avatar, settings } = result.data
-    const room = roomManager.create(playerName, avatar, settings)
+    const { playerName, avatar, settings, spectator } = result.data
+    const room = roomManager.create(playerName, avatar, settings, spectator)
     const hostId = room.game.hostId
 
     void socket.join(room.game.code)
@@ -484,12 +484,12 @@ function revealRound(io: AppServer, roomCode: string): void {
 
   room.clearVotingTimer()
   round.status = 'REVEAL'
-  const deltas = computeScoreDeltas(round, room.game.flags, room.game.settings)
+  const { deltas, breakdown } = computeScoreDeltas(round, room.game.flags, room.game.settings)
   logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} revealed — deltas ${JSON.stringify(deltas)}`)
   room.applyScoreDeltas(deltas)
 
   broadcastGameUpdate(io, roomCode)
-  io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas })
+  io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas, breakdown })
 }
 
 /** Pick the longest-connected remaining player as the new host. No-op if none. */

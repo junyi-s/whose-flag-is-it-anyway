@@ -13,9 +13,9 @@ class RoomManager {
     return this.rooms.has(code)
   }
 
-  create(hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>): GameRoom {
+  create(hostName: string, hostAvatar: AvatarConfig, settings?: Partial<GameSettings>, spectator = false): GameRoom {
     const code = generateCode(new Set(this.rooms.keys()))
-    const room = new GameRoom(code, hostName, hostAvatar, settings)
+    const room = new GameRoom(code, hostName, hostAvatar, settings, spectator)
     this.rooms.set(code, room)
     return room
   }
