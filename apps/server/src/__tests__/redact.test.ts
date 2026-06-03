@@ -269,3 +269,92 @@ describe('PLAYING — future round text is stripped', () => {
     expect(view.rounds[0]!.redFlag.subjectId).toBe(ALICE)
   })
 })
+
+// ─── voteOrder redaction ─────────────────────────────────────────────────────
+
+describe('voteOrder is always stripped from client views', () => {
+  const flag = makeFlag('f1', 'Flag text', ALICE, ALICE)
+  const makeRoundWithOrder = (status: 'VOTING' | 'REVEAL' | 'SCOREBOARD'): Round => ({
+    index: 0,
+    redFlag: { id: 'f1', text: 'Flag text', authorId: ALICE, subjectId: ALICE },
+    status,
+    votes: { [BOB]: ALICE },
+    voteOrder: [BOB],
+    startedAt: 1000,
+    votingEndsAt: 9999,
+  })
+
+  it('voteOrder absent during VOTING', () => {
+    const game = baseGame({
+      status: 'PLAYING',
+      flags: { f1: flag },
+      rounds: [makeRoundWithOrder('VOTING')],
+      currentRoundIndex: 0,
+    })
+    const view = redactGameFor(game, BOB)
+    expect((view.rounds[0] as any).voteOrder).toBeUndefined()
+  })
+
+  it('voteOrder absent after REVEAL (current round)', () => {
+    const game = baseGame({
+      status: 'PLAYING',
+      flags: { f1: flag },
+      rounds: [makeRoundWithOrder('REVEAL')],
+      currentRoundIndex: 0,
+    })
+    const view = redactGameFor(game, BOB)
+    expect((view.rounds[0] as any).voteOrder).toBeUndefined()
+  })
+
+  it('voteOrder absent in past rounds', () => {
+    const f2 = makeFlag('f2', 'Round 2', BOB, BOB)
+    const rounds: Round[] = [
+      { ...makeRoundWithOrder('SCOREBOARD'), index: 0 },
+      { index: 1, redFlag: { id: 'f2', text: 'Round 2', authorId: BOB, subjectId: BOB }, status: 'PRESENTING', votes: {}, startedAt: 0 },
+    ]
+    const game = baseGame({
+      status: 'PLAYING',
+      flags: { f1: flag, f2 },
+      rounds,
+      currentRoundIndex: 1,
+    })
+    const view = redactGameFor(game, BOB)
+    expect((view.rounds[0] as any).voteOrder).toBeUndefined()
+  })
+
+  it('voteOrder absent in FINAL_RESULTS', () => {
+    const round: Round = { ...makeRoundWithOrder('SCOREBOARD'), status: 'SCOREBOARD' }
+    const game = baseGame({
+      status: 'FINAL_RESULTS',
+      flags: { f1: flag },
+      rounds: [round],
+      currentRoundIndex: 0,
+    })
+    const view = redactGameFor(game, BOB)
+    expect((view.rounds[0] as any).voteOrder).toBeUndefined()
+  })
+})
+
+// ─── advanceAt visibility ─────────────────────────────────────────────────────
+
+describe('advanceAt is visible in round views (not stripped)', () => {
+  it('advanceAt present in current REVEAL round when set', () => {
+    const flag = makeFlag('f1', 'Flag text', ALICE, ALICE)
+    const round: Round = {
+      index: 0,
+      redFlag: { id: 'f1', text: 'Flag text', authorId: ALICE, subjectId: ALICE },
+      status: 'REVEAL',
+      votes: {},
+      startedAt: 1000,
+      advanceAt: 99999,
+    }
+    const game = baseGame({
+      status: 'PLAYING',
+      flags: { f1: flag },
+      rounds: [round],
+      currentRoundIndex: 0,
+    })
+    const view = redactGameFor(game, BOB)
+    expect(view.rounds[0]!.advanceAt).toBe(99999)
+  })
+})

@@ -598,6 +598,109 @@ describe('Socket integration', () => {
 
   // ── 10. Leave during SUBMITTING removes the player ──────────────────────────
 
+  // ── 15. round:revealed includes breakdown ─────────────────────────────────
+
+  it('round:revealed event includes a breakdown field with per-player score lines', async () => {
+    const { alice, aliceId, bob, bobId, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    const round0Flag = room.game.flags[room.game.rounds[0]!.redFlag.id]!
+    const nonAuthorId = round0Flag.authorId === aliceId ? bobId : aliceId
+    const nonAuthorSocket = round0Flag.authorId === aliceId ? bob : alice
+    const subjectId = round0Flag.subjectId
+
+    const revealedPromise = new Promise<{ scoreDeltas: Record<string, number>; breakdown: Record<string, unknown[]> }>((resolve) => {
+      alice.once('round:revealed', resolve)
+    })
+
+    await ackP(alice, 'round:openVoting', {})
+    await ackP(nonAuthorSocket, 'vote:cast', { guessedPlayerId: subjectId })
+    await ackP(alice, 'round:reveal', {})
+
+    const { breakdown, scoreDeltas } = await revealedPromise
+
+    // breakdown must be an object, not undefined/null
+    expect(breakdown).toBeDefined()
+    expect(typeof breakdown).toBe('object')
+
+    // For the non-author who voted correctly, breakdown should include a 'correct' line
+    const lines = breakdown[nonAuthorId] as Array<{ reason: string; points: number }> | undefined
+    expect(lines).toBeDefined()
+    expect(lines!.some((l) => l.reason === 'correct')).toBe(true)
+
+    // Deltas must equal the sum of each player's breakdown points
+    for (const [pid, pts] of Object.entries(scoreDeltas)) {
+      const sum = (breakdown[pid] as Array<{ points: number }> ?? []).reduce((a, l) => a + l.points, 0)
+      expect(sum).toBe(pts)
+    }
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 16. settings:update cross-field rejection ──────────────────────────────
+
+  it('settings:update rejects foolingBonusMax >= pointsForCorrectGuess', async () => {
+    const alice = connect(url)
+    const bob = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+    ])
+
+    const { code } = await ackP<RoomCreateResponse>(alice, 'room:create', { playerName: 'Alice', avatar: AVATAR })
+    await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+
+    const errorPromise = new Promise<{ code: string; message: string }>((resolve) => alice.once('error', resolve))
+    // pointsForCorrectGuess defaults to 100; set foolingBonusMax=100 (equal → violation)
+    await ackP(alice, 'settings:update', { settings: { foolingBonusMax: 100 } })
+    const err = await errorPromise
+    expect(err.code).toBe('INVALID_SETTINGS')
+    expect(err.message).toMatch(/foolingBonusMax/)
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 17. spectator:set then flags:submit rejected ───────────────────────────
+
+  it('spectator:set in LOBBY then flags:submit is rejected with SPECTATOR error', async () => {
+    // Need 3 participants: alice + carol (competitors) + bob (presenter).
+    // With only 1 competitor (if just alice+bob-spectator), game:start would fail MIN_PLAYERS.
+    const alice = connect(url)
+    const bob = connect(url)
+    const carol = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+      new Promise<void>((r) => carol.once('connect', r)),
+    ])
+
+    const { code } = await ackP<RoomCreateResponse>(alice, 'room:create', { playerName: 'Alice', avatar: AVATAR })
+    await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+    await ackP<RoomJoinResponse>(carol, 'room:join', { code, playerName: 'Carol', avatar: AVATAR })
+
+    // Bob marks himself as a presenter (alice + carol remain competitors → 2 ≥ MIN_PLAYERS)
+    await ackP(bob, 'spectator:set', { spectator: true })
+
+    // Advance to SUBMITTING — should succeed with 2 competitors
+    await ackP(alice, 'game:start', {})
+    const room = roomManager.get(code)!
+    expect(room.game.status).toBe('SUBMITTING')
+
+    // Bob (spectator) tries to submit flags — should be rejected
+    const errorPromise = new Promise<{ code: string }>((resolve) => bob.once('error', resolve))
+    await ackP(bob, 'flags:submit', { flags: ['A flag', 'Another flag', 'Third flag', 'Fourth flag', 'Fifth flag'] })
+    const err = await errorPromise
+    expect(err.code).toBe('SPECTATOR')
+
+    alice.disconnect()
+    bob.disconnect()
+    carol.disconnect()
+  }, 10_000)
+
+  // ── 18. Leave during SUBMITTING removes the player ─────────────────────────
+
   it('leaving during SUBMITTING removes the player, their flags, and frees the name', async () => {
     const alice = connect(url)
     const bob = connect(url)

@@ -156,6 +156,28 @@ describe('computeClassicScoring', () => {
       expect(sum).toBe(deltas[pid])
     }
   })
+
+  it('all voters correct: rare=0, stealth=0 for self-flag (wrongFraction=0)', () => {
+    // Both BOB and CAROL vote correctly — nobody was wrong
+    const votes = { [BOB]: ALICE, [CAROL]: ALICE }
+    const { deltas, breakdown } = computeClassicScoring(votes, ALICE, ALICE, SETTINGS)
+    // total=2, correct=2, rare=round(100*(1-2/2))=0 → rare lines suppressed
+    expect(breakdown[BOB]).not.toContainEqual(expect.objectContaining({ reason: 'rare' }))
+    expect(breakdown[CAROL]).not.toContainEqual(expect.objectContaining({ reason: 'rare' }))
+    // wrongFraction=0 → stealth=0 → no stealth line
+    expect(breakdown[ALICE]).toBeUndefined()
+    expect(deltas[ALICE]).toBeUndefined()
+  })
+
+  it('call-out: all voters correct → author gets zero fooling (wrongFraction=0)', () => {
+    // ALICE wrote about BOB; both voters guess BOB correctly
+    const votes = { [CAROL]: BOB, [DAN]: BOB }
+    const { deltas } = computeClassicScoring(votes, BOB, ALICE, SETTINGS)
+    // wrongFraction=0 → fooling=round(50*0)=0 → suppressed (add ignores <=0)
+    expect(deltas[ALICE]).toBeUndefined()
+    expect(deltas[CAROL]).toBeGreaterThan(0)   // correct voters score
+    expect(deltas[DAN]).toBeGreaterThan(0)
+  })
 })
 
 // ─── computeSpeedScoring ──────────────────────────────────────────────────────
@@ -187,6 +209,26 @@ describe('computeSpeedScoring', () => {
     const votes = Object.fromEntries(pids.map((p) => [p, 'subject']))
     const { deltas } = computeSpeedScoring(pids, votes, 'subject', settings)
     expect(deltas['p5']).toBe(20)
+  })
+
+  it('voteOrder position determines rank, not submission order in votes map', () => {
+    // CAROL voted first (position 0 in voteOrder) but BOB is first in the votes object —
+    // scoring must use voteOrder, not Object.entries order.
+    const voteOrder = [CAROL, BOB]
+    const votes = { [BOB]: 'subject', [CAROL]: 'subject' }
+    const { deltas } = computeSpeedScoring(voteOrder, votes, 'subject', SETTINGS)
+    expect(deltas[CAROL]).toBe(100)   // rank 0 → 100
+    expect(deltas[BOB]).toBe(80)      // rank 1 → 80
+  })
+
+  it('re-cast simulation: moving to back of voteOrder reduces score', () => {
+    // ALICE voted first; then changed answer (server moves her to back).
+    // After: [BOB, ALICE]. ALICE should get rank-1 points, not rank-0.
+    const voteOrder = [BOB, ALICE]
+    const votes = { [ALICE]: 'subject', [BOB]: 'subject' }
+    const { deltas } = computeSpeedScoring(voteOrder, votes, 'subject', SETTINGS)
+    expect(deltas[BOB]).toBe(100)    // rank 0
+    expect(deltas[ALICE]).toBe(80)   // rank 1 — penalised for re-casting
   })
 })
 
