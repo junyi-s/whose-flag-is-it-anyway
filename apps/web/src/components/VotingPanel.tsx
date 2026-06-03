@@ -1,21 +1,36 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import type { Player, PlayerId } from '@whose-flag/shared'
 import { socket } from '../lib/socket'
 import { playSound } from '../lib/sounds'
+import type { VoteCastResponse } from '@whose-flag/shared'
 
 interface VotingPanelProps {
   players: Player[]
   myPlayerId: PlayerId
   isOwnFlag: boolean
   myVote?: PlayerId
+  isSpeedMode?: boolean
 }
 
-export function VotingPanel({ players, myPlayerId, isOwnFlag, myVote }: VotingPanelProps) {
+export function VotingPanel({ players, myPlayerId, isOwnFlag, myVote, isSpeedMode }: VotingPanelProps) {
+  const [lockPosition, setLockPosition] = useState<number | null>(null)
+
   function handleVote(guessedPlayerId: PlayerId) {
     if (isOwnFlag) return
+    const wasVoted = myVote !== undefined
     playSound('vote')
-    socket.emit('vote:cast', { guessedPlayerId }, () => {})
+    socket.emit('vote:cast', { guessedPlayerId }, (res: VoteCastResponse) => {
+      if (res.order !== undefined) setLockPosition(res.order)
+    })
+    // In speed mode: changing answer goes to back of line — warn the user
+    if (wasVoted && isSpeedMode && guessedPlayerId !== myVote) {
+      // Position will be updated from the ack
+    }
   }
+
+  // Only show competing players (non-spectators)
+  const eligiblePlayers = players.filter((p) => !p.spectator)
 
   if (isOwnFlag) {
     return (
@@ -31,8 +46,23 @@ export function VotingPanel({ players, myPlayerId, isOwnFlag, myVote }: VotingPa
       <p className="text-center text-white/50 text-sm font-bold uppercase tracking-widest mb-4">
         Whose flag is it?
       </p>
+
+      {isSpeedMode && (
+        <div className="mb-3 text-center">
+          {myVote ? (
+            <p className="text-xs font-bold text-brand-yellow/80 bg-brand-yellow/10 rounded-lg py-1.5 px-3">
+              ⚡ Changing your answer sends you to the back of the line!
+            </p>
+          ) : (
+            <p className="text-xs text-white/40 font-medium">
+              ⚡ First correct guess wins the most — commit fast!
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-3" role="group" aria-label="Vote for a player">
-        {players.map((player) => {
+        {eligiblePlayers.map((player) => {
           const selected = myVote === player.id
           const label = player.id === myPlayerId ? 'You' : player.name
           return (
@@ -63,10 +93,20 @@ export function VotingPanel({ players, myPlayerId, isOwnFlag, myVote }: VotingPa
           )
         })}
       </div>
-      {myVote && (
+
+      {myVote && !isSpeedMode && (
         <p className="text-center text-green-400 text-sm font-bold mt-4">
           ✓ Vote locked — tap another to change
         </p>
+      )}
+
+      {myVote && isSpeedMode && lockPosition !== null && (
+        <div className="mt-4 text-center">
+          <p className="text-green-400 text-sm font-bold">
+            ⚡ Locked in at position #{lockPosition}
+          </p>
+          <p className="text-xs text-white/30 mt-0.5">Changing sends you to the back!</p>
+        </div>
       )}
     </div>
   )

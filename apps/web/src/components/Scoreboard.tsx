@@ -6,12 +6,15 @@ interface ScoreboardProps {
   players: Record<PlayerId, Player>
   deltas?: Record<PlayerId, number> | null
   myPlayerId: PlayerId
+  /** When true, only show competitors (non-spectators) on the board. */
+  competitorsOnly?: boolean
 }
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
-export function Scoreboard({ scores, players, deltas, myPlayerId }: ScoreboardProps) {
+export function Scoreboard({ scores, players, deltas, myPlayerId, competitorsOnly }: ScoreboardProps) {
   const ranked = Object.values(players)
+    .filter((p) => !competitorsOnly || !p.spectator)
     .map((p) => ({ player: p, score: scores[p.id] ?? 0, delta: deltas?.[p.id] ?? 0 }))
     .sort((a, b) => b.score - a.score)
 

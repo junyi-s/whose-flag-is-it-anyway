@@ -44,6 +44,22 @@ export function SubmitFlags() {
   if (!game || !playerId || !code) return <LoadingScreen />
   if (game.status === 'GENERATING') return <GeneratingScreen />
 
+  const myPlayer = game.players[playerId]
+  const isSpectator = myPlayer?.spectator ?? false
+
+  // Presenters don't submit flags — show a waiting screen
+  if (isSpectator) {
+    return (
+      <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center gap-4 px-4">
+        <div className="text-6xl">📺</div>
+        <h2 className="text-2xl font-black text-white text-center">Presenter Mode</h2>
+        <p className="text-white/40 text-sm font-medium text-center max-w-xs">
+          You're running on the shared screen. Players are submitting their flags.
+        </p>
+      </div>
+    )
+  }
+
   const allFlags = Object.values(game.flags)
   // During SUBMITTING the server only sends flags where authorId === viewer,
   // so text/subjectId are always present on these objects.
@@ -51,14 +67,17 @@ export function SubmitFlags() {
     (f): f is RedFlagView & { text: string } =>
       f.authorId === playerId && f.subjectId === playerId && f.text !== undefined,
   )
-  const otherPlayers = Object.values(game.players).filter((p) => p.id !== playerId)
+  // Only show competing players as call-out targets
+  const otherPlayers = Object.values(game.players).filter((p) => p.id !== playerId && !p.spectator)
   const minFlags = game.settings.minFlagsPerPlayer
   const maxFlags = game.settings.maxFlagsPerPlayer
   const isHost = game.hostId === playerId
   const hasEnoughSelf = selfFlags.length >= minFlags
 
+  // Only competitors need to submit flags; exclude spectators from the ready check
+  const competitorIds = Object.values(game.players).filter((p) => !p.spectator).map((p) => p.id)
   const allPlayersReady = game.submissionStatus != null &&
-    Object.keys(game.players).every(
+    competitorIds.every(
       (pid) => (game.submissionStatus![pid] ?? 0) >= minFlags,
     )
 
@@ -73,9 +92,9 @@ export function SubmitFlags() {
           </p>
         </div>
 
-        {/* Player progress */}
+        {/* Player progress — competitors only */}
         <PlayerProgressRow
-          players={Object.values(game.players)}
+          players={Object.values(game.players).filter((p) => !p.spectator)}
           submissionStatus={game.submissionStatus ?? {}}
           minFlags={minFlags}
           currentPlayerId={playerId}

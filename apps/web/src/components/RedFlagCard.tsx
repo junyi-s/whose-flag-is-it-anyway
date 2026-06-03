@@ -3,11 +3,13 @@ import { motion } from 'framer-motion'
 interface RedFlagCardProps {
   text: string
   theme?: string
+  /** Larger layout for presenter/shared-screen view. */
+  large?: boolean
 }
 
-export function RedFlagCard({ text, theme }: RedFlagCardProps) {
+export function RedFlagCard({ text, theme, large }: RedFlagCardProps) {
   return (
-    <div className="w-full max-w-md mx-auto">
+    <div className={`w-full mx-auto ${large ? 'max-w-2xl' : 'max-w-md'}`}>
       {theme && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -24,15 +26,17 @@ export function RedFlagCard({ text, theme }: RedFlagCardProps) {
         animate={{ rotateX: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 200, damping: 20 }}
         style={{ transformPerspective: 1000 }}
-        className="relative bg-gradient-to-br from-brand-red to-brand-pink rounded-3xl p-8 shadow-[0_8px_0_#8B0010] min-h-[12rem] flex items-center justify-center"
+        className={`relative bg-gradient-to-br from-brand-red to-brand-pink rounded-3xl shadow-[0_8px_0_#8B0010] flex items-center justify-center ${
+          large ? 'p-12 min-h-[16rem]' : 'p-8 min-h-[12rem]'
+        }`}
         role="article"
         aria-label={`Red flag: ${text}`}
       >
-        <span className="absolute top-4 left-5 text-3xl select-none" aria-hidden="true">🚩</span>
-        <p className="text-white text-2xl sm:text-3xl font-black text-center leading-snug break-words">
+        <span className={`absolute top-4 left-5 select-none ${large ? 'text-5xl' : 'text-3xl'}`} aria-hidden="true">🚩</span>
+        <p className={`text-white font-black text-center leading-snug break-words ${large ? 'text-4xl sm:text-5xl' : 'text-2xl sm:text-3xl'}`}>
           {text}
         </p>
-        <span className="absolute bottom-4 right-5 text-3xl select-none rotate-12">🚩</span>
+        <span className={`absolute bottom-4 right-5 select-none rotate-12 ${large ? 'text-5xl' : 'text-3xl'}`}>🚩</span>
       </motion.div>
     </div>
   )
