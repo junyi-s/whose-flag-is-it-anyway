@@ -398,7 +398,80 @@ describe('Socket integration', () => {
     bob.disconnect()
   }, 10_000)
 
-  // ── 9. Leave during SUBMITTING removes the player ──────────────────────────
+  // ── 9. Speed mode — voteOrder, change-penalty, redaction ─────────────────
+
+  it('speed mode: voteOrder ack returns 1-based position; voteOrder absent from redacted view', async () => {
+    const { alice, aliceId, bob, bobId, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    // Switch to speed mode before opening voting
+    room.game.settings.gameMode = 'speed'
+
+    const round0FlagId = room.game.rounds[0]!.redFlag.id
+    const round0Flag = room.game.flags[round0FlagId]!
+    const subjectId = round0Flag.subjectId
+    const authorId = round0Flag.authorId
+
+    // Manually open voting without triggering auto-reveal: set status directly so
+    // we can test voteOrder state before auto-reveal fires.
+    const round = room.game.rounds[0]!
+    round.status = 'VOTING'
+    round.votingEndsAt = Date.now() + 60_000
+
+    const nonAuthorSocket = authorId === aliceId ? bob : alice
+    const nonAuthorId = authorId === aliceId ? bobId : aliceId
+
+    // Vote — in 2-player speed game this triggers auto-reveal since all eligible voted.
+    // We capture the ack before the reveal fires.
+    const ack = await ackP<{ order?: number }>(nonAuthorSocket, 'vote:cast', { guessedPlayerId: subjectId })
+    expect(ack.order).toBe(1)   // first (and only) position
+
+    // After auto-reveal, verify voteOrder exists on server round
+    expect(round.voteOrder).toEqual([nonAuthorId])
+
+    // Verify voteOrder is NOT in the game view sent to clients (redaction)
+    const snap = room.snapshot()
+    const { redactGameFor } = await import('@whose-flag/shared')
+    const redacted = redactGameFor(snap, nonAuthorId)
+    // After REVEAL, voteOrder must still be absent from the client view
+    expect((redacted.rounds[0] as any).voteOrder).toBeUndefined()
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  it('speed mode: auto-reveals when all eligible competitors have voted', async () => {
+    const { alice, aliceId, bob, bobId, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+    room.game.settings.gameMode = 'speed'
+
+    const round0FlagId = room.game.rounds[0]!.redFlag.id
+    const round0Flag = room.game.flags[round0FlagId]!
+    const authorId = round0Flag.authorId
+    const subjectId = round0Flag.subjectId
+
+    const nonAuthorSocket = authorId === aliceId ? bob : alice
+
+    await ackP(alice, 'round:openVoting', {})
+
+    // Wait for auto-reveal after non-author (the only eligible voter) votes
+    const revealedPromise = new Promise<{ scoreDeltas: Record<string, number> }>((resolve) => {
+      alice.once('round:revealed', resolve)
+    })
+
+    // The non-author is the only eligible voter — voting triggers auto-reveal
+    await ackP(nonAuthorSocket, 'vote:cast', { guessedPlayerId: subjectId })
+    const { scoreDeltas } = await revealedPromise
+
+    // Correct guess in speed mode → speedFirstPoints (100)
+    const nonAuthorId = authorId === aliceId ? bobId : aliceId
+    expect(scoreDeltas[nonAuthorId]).toBe(100)
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 10. Leave during SUBMITTING removes the player ──────────────────────────
 
   it('leaving during SUBMITTING removes the player, their flags, and frees the name', async () => {
     const alice = connect(url)

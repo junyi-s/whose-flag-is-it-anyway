@@ -307,11 +307,37 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const flag = room.game.flags[round.redFlag.id]
     if (flag?.authorId === playerId) { fail(socket, cb, 'CANNOT_VOTE_OWN', 'Cannot vote for your own flag'); return }
 
+    // Speed mode: maintain voteOrder — any cast/re-cast moves voter to back of line (M3 default).
+    let lockPosition: number | undefined
+    if (room.game.settings.gameMode === 'speed') {
+      round.voteOrder ??= []
+      const idx = round.voteOrder.indexOf(playerId)
+      if (idx !== -1) round.voteOrder.splice(idx, 1)
+      round.voteOrder.push(playerId)
+      lockPosition = round.voteOrder.length  // 1-based position
+    }
+
     round.votes[playerId] = result.data.guessedPlayerId
     logger.debug(`[room:${roomCode}] round ${room.game.currentRoundIndex} vote:cast player=${playerId} guessed=${result.data.guessedPlayerId}`)
     io.to(roomCode).emit('round:vote', { voterId: playerId })
     broadcastGameUpdate(io, roomCode)
-    cb({})
+
+    // Speed mode M2: auto-reveal when every eligible competitor has voted.
+    // Eligible = non-spectator AND not the flag's author (author cannot vote).
+    if (room.game.settings.gameMode === 'speed') {
+      const eligibleVoters = Object.values(room.game.players).filter(
+        (p) => !p.spectator && p.id !== flag?.authorId,
+      )
+      const allVoted = eligibleVoters.every((p) => round.votes[p.id] !== undefined)
+      if (allVoted) {
+        logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} all competitors voted (speed) → auto-reveal`)
+        revealRound(io, roomCode)
+        cb({ order: lockPosition })
+        return
+      }
+    }
+
+    cb(lockPosition !== undefined ? { order: lockPosition } : {})
   })
 
   // ─── round:reveal ───
