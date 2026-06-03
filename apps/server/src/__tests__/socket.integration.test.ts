@@ -471,6 +471,61 @@ describe('Socket integration', () => {
     bob.disconnect()
   }, 10_000)
 
+  // ── 12. Presenter (spectator) capability model ─────────────────────────────
+
+  it('presenter cannot vote:cast and is rejected with SPECTATOR error', async () => {
+    const { alice, bob, bobId, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    // Make Bob a spectator (presenter)
+    const bobPlayer = room.game.players[bobId]!
+    bobPlayer.spectator = true
+
+    await ackP(alice, 'round:openVoting', {})
+
+    const errorPromise = new Promise<{ code: string }>((resolve) => bob.once('error', resolve))
+    const round0Flag = room.game.flags[room.game.rounds[0]!.redFlag.id]!
+    const subjectId = round0Flag.subjectId
+    await ackP(bob, 'vote:cast', { guessedPlayerId: subjectId })
+    const err = await errorPromise
+    expect(err.code).toBe('SPECTATOR')
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  it('presenter + 2 competitors meets MIN_PLAYERS requirement', async () => {
+    // Create room with 3 participants: host (competitor), Alice, Bob (presenter)
+    const host = connect(url)
+    const alice = connect(url)
+    const bob = connect(url)
+    await Promise.all([
+      new Promise<void>((r) => host.once('connect', r)),
+      new Promise<void>((r) => alice.once('connect', r)),
+      new Promise<void>((r) => bob.once('connect', r)),
+    ])
+
+    const createRes = await ackP<RoomCreateResponse>(host, 'room:create', { playerName: 'Host', avatar: AVATAR })
+    const { code } = createRes
+
+    await ackP<RoomJoinResponse>(alice, 'room:join', { code, playerName: 'Alice', avatar: AVATAR })
+    const bobJoin = await ackP<RoomJoinResponse>(bob, 'room:join', { code, playerName: 'Bob', avatar: AVATAR })
+    const bobId = bobJoin.playerId
+
+    // Make Bob a presenter via spectator:set
+    await ackP(bob, 'spectator:set', { spectator: true })
+    const room = roomManager.get(code)!
+    expect(room.game.players[bobId]!.spectator).toBe(true)
+
+    // competitorCount = host + alice = 2 → should be able to start
+    const startRes = await ackP<Record<string, unknown>>(host, 'game:start', {})
+    expect(room.game.status).toBe('SUBMITTING')
+
+    host.disconnect()
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
   // ── 10. Leave during SUBMITTING removes the player ──────────────────────────
 
   it('leaving during SUBMITTING removes the player, their flags, and frees the name', async () => {

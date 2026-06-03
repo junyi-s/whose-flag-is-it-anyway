@@ -4,6 +4,8 @@ import {
   MAX_FLAGS_ASSIGNED_PER_TARGET,
   MAX_FLAGS_PER_PLAYER,
   MAX_PLAYERS,
+  competitors,
+  isCompetitor,
   type AvatarConfig,
   type Game,
   type GameSettings,
@@ -190,11 +192,14 @@ export class GameRoom {
     return this.selfFlagsForPlayer(playerId).length
   }
 
+  /** Competitors only — presenters (spectators) are excluded from flag requirements. */
   allPlayersHaveMinFlags(): boolean {
     const min = this.game.settings.minFlagsPerPlayer
-    return Object.keys(this.game.players).every(
-      (pid) => this.selfFlagCount(pid) >= min,
-    )
+    return competitors(this.game).every((p) => this.selfFlagCount(p.id) >= min)
+  }
+
+  competitorCount(): number {
+    return competitors(this.game).length
   }
 
   setRounds(rounds: Round[]): void {

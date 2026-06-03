@@ -10,6 +10,8 @@ import {
   RoomRejoinSchema,
   SettingsUpdateSchema,
   VoteCastSchema,
+  competitors,
+  isCompetitor,
   redactGameFor,
   type ClientToServerEvents,
   type ServerToClientEvents,
@@ -155,6 +157,20 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     cb({})
   })
 
+  // ─── spectator:set ───
+  socket.on('spectator:set', (payload, cb) => {
+    const { roomCode, playerId } = socket.data
+    if (!roomCode || !playerId) { fail(socket, cb, 'NOT_IN_ROOM', 'Not in a room'); return }
+    const room = roomManager.get(roomCode)
+    if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
+    if (room.game.status !== 'LOBBY') { fail(socket, cb, 'WRONG_STATE', 'Can only change presenter mode in LOBBY'); return }
+    const player = room.game.players[playerId]
+    if (!player) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Player not found'); return }
+    player.spectator = payload.spectator
+    broadcastGameUpdate(io, roomCode)
+    cb({})
+  })
+
   // ─── settings:update ───
   socket.on('settings:update', (payload, cb) => {
     const result = SettingsUpdateSchema.safeParse(payload)
@@ -188,6 +204,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const room = roomManager.get(roomCode)
     if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
     if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Not in submission phase'); return }
+    if (room.game.players[playerId]?.spectator) { fail(socket, cb, 'SPECTATOR', 'Presenters do not submit flags'); return }
 
     const flags = result.data.flags.map((text) => makeFlag(text, playerId))
     const accepted = room.addSelfFlags(playerId, flags)
@@ -212,6 +229,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const { subjectId, flags: texts } = result.data
     if (subjectId === playerId) { fail(socket, cb, 'INVALID_SUBJECT', 'Cannot assign flags to yourself'); return }
     if (!room.hasPlayer(subjectId)) { fail(socket, cb, 'PLAYER_NOT_FOUND', 'Target player not in room'); return }
+    if (room.game.players[subjectId]?.spectator) { fail(socket, cb, 'INVALID_SUBJECT', 'Cannot assign flags to a presenter'); return }
 
     const flags = texts.map((text) => makeFlag(text, playerId, subjectId))
     const accepted = room.addAssignedFlags(playerId, subjectId, flags)
@@ -302,10 +320,15 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const round = room.game.rounds[room.game.currentRoundIndex]
     if (!round || round.status !== 'VOTING') { fail(socket, cb, 'WRONG_STATE', 'Voting is not open'); return }
 
+    if (room.game.players[playerId]?.spectator) { fail(socket, cb, 'SPECTATOR', 'Presenters cannot vote'); return }
+
     if (!room.hasPlayer(result.data.guessedPlayerId)) { fail(socket, cb, 'INVALID_GUESS', 'That player is not in this room'); return }
 
     const flag = room.game.flags[round.redFlag.id]
     if (flag?.authorId === playerId) { fail(socket, cb, 'CANNOT_VOTE_OWN', 'Cannot vote for your own flag'); return }
+
+    // Guessed player must be a competitor (not a spectator)
+    if (room.game.players[result.data.guessedPlayerId]?.spectator) { fail(socket, cb, 'INVALID_GUESS', 'Cannot guess a presenter'); return }
 
     // Speed mode: maintain voteOrder — any cast/re-cast moves voter to back of line (M3 default).
     let lockPosition: number | undefined
@@ -438,8 +461,8 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
 
   // LOBBY → SUBMITTING
   if (room.game.status === 'LOBBY') {
-    if (Object.keys(room.game.players).length < MIN_PLAYERS) {
-      fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return
+    if (room.competitorCount() < MIN_PLAYERS) {
+      fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} competing players`); return
     }
     room.game.status = 'SUBMITTING'
     logger.info(`[room:${roomCode}] LOBBY→SUBMITTING`)
@@ -450,8 +473,8 @@ async function gameStart<T>(io: AppServer, socket: AppSocket, cb: (r: T) => void
 
   // SUBMITTING → GENERATING → PLAYING
   if (room.game.status !== 'SUBMITTING') { fail(socket, cb, 'WRONG_STATE', 'Cannot start game now'); return }
-  if (Object.keys(room.game.players).length < MIN_PLAYERS) {
-    fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} players`); return
+  if (room.competitorCount() < MIN_PLAYERS) {
+    fail(socket, cb, 'NOT_ENOUGH_PLAYERS', `Need at least ${MIN_PLAYERS} competing players`); return
   }
   if (!room.allPlayersHaveMinFlags()) {
     fail(socket, cb, 'NOT_ENOUGH_FLAGS', 'All players must submit minimum flags'); return
@@ -520,14 +543,18 @@ function revealRound(io: AppServer, roomCode: string): void {
   io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas, breakdown })
 }
 
-/** Pick the longest-connected remaining player as the new host. No-op if none. */
+/**
+ * Pick the new host. Prefers competitors (non-spectators) over presenters —
+ * if a presenter host drops, control moves to a player with a phone.
+ * Falls back to any connected player if no competitor is available.
+ */
 function migrateHost(room: GameRoom, roomCode: string): void {
-  const next = Object.values(room.game.players)
-    .filter((p) => p.isConnected)
-    .sort((a, b) => a.joinedAt - b.joinedAt)[0]
+  const connected = Object.values(room.game.players).filter((p) => p.isConnected)
+  const next = (connected.filter((p) => !p.spectator).sort((a, b) => a.joinedAt - b.joinedAt)[0])
+    ?? connected.sort((a, b) => a.joinedAt - b.joinedAt)[0]
   if (next) {
     room.transferHost(next.id)
-    logger.info(`Host transferred to ${next.id} in room ${roomCode}`)
+    logger.info(`Host transferred to ${next.id} (spectator=${next.spectator}) in room ${roomCode}`)
   }
 }
 

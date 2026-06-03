@@ -47,11 +47,17 @@ export interface SettingsUpdatePayload {
 
 // ─── Client → Server event map ───
 
+export interface SpectatorSetPayload {
+  spectator: boolean
+}
+
 export interface ClientToServerEvents {
   'room:create': (payload: RoomCreatePayload, cb: (res: RoomCreateResponse) => void) => void
   'room:join': (payload: RoomJoinPayload, cb: (res: RoomJoinResponse) => void) => void
   'room:rejoin': (payload: RoomRejoinPayload, cb: (res: RoomRejoinResponse) => void) => void
   'room:leave': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
+  /** Toggle your own presenter/spectator status (LOBBY only, before game starts). */
+  'spectator:set': (payload: SpectatorSetPayload, cb: (res: EmptyResponse) => void) => void
   'flags:submit': (payload: FlagsSubmitPayload, cb: (res: FlagsSubmitResponse) => void) => void
   'flags:assign': (payload: FlagsAssignPayload, cb: (res: FlagsAssignResponse) => void) => void
   'game:start': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
