@@ -26,9 +26,16 @@ export class GameRoom {
   private rejoinSecrets = new Map<PlayerId, string>()
   private llmCallCount = 0
   private lastGeneratingAt = 0
-  /** Auto-reveal timer; cleared on manual reveal or round advance to prevent stale fires. */
-  private votingTimerHandle?: ReturnType<typeof setTimeout>
-  private votingTimerRound = -1
+  /**
+   * Round-bound phase timer: one active timer at a time (game is linear).
+   * Stores the handle, the round it belongs to, and the status it fires in.
+   * The callback must re-check (roundIndex, status) before acting — stale-timer guard.
+   */
+  private scheduledPhase?: {
+    handle: ReturnType<typeof setTimeout>
+    roundIndex: number
+    status: string
+  }
   /** Deferred host migration (A.5); cancelled if the host reconnects within the grace window. */
   private hostMigrationTimer?: ReturnType<typeof setTimeout>
 
@@ -227,21 +234,28 @@ export class GameRoom {
     return this.game.flags[flagId]
   }
 
-  setVotingTimer(handle: ReturnType<typeof setTimeout>, roundIndex: number): void {
-    this.clearVotingTimer()
-    this.votingTimerHandle = handle
-    this.votingTimerRound = roundIndex
+  schedulePhase(handle: ReturnType<typeof setTimeout>, roundIndex: number, status: string): void {
+    this.clearPhase()
+    this.scheduledPhase = { handle, roundIndex, status }
   }
 
-  clearVotingTimer(): void {
-    if (this.votingTimerHandle !== undefined) {
-      clearTimeout(this.votingTimerHandle)
-      this.votingTimerHandle = undefined
-      this.votingTimerRound = -1
+  clearPhase(): void {
+    if (this.scheduledPhase !== undefined) {
+      clearTimeout(this.scheduledPhase.handle)
+      this.scheduledPhase = undefined
     }
   }
 
-  get activeVotingRound(): number { return this.votingTimerRound }
+  get activePhaseRound(): number { return this.scheduledPhase?.roundIndex ?? -1 }
+
+  // Backward-compat aliases used by tests (clearPhase/schedulePhase are canonical).
+  setVotingTimer(handle: ReturnType<typeof setTimeout>, roundIndex: number): void {
+    this.schedulePhase(handle, roundIndex, 'VOTING')
+  }
+
+  clearVotingTimer(): void { this.clearPhase() }
+
+  get activeVotingRound(): number { return this.activePhaseRound }
 
   snapshot(): Game {
     return JSON.parse(JSON.stringify(this.game)) as Game

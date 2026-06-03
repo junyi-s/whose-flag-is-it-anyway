@@ -262,13 +262,14 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
       return
     }
 
-    room.clearVotingTimer()
+    room.clearPhase()  // cancel any pending auto-advance dwell
     const prev = room.game.currentRoundIndex
     room.game.currentRoundIndex = next
     logger.info(`[room:${roomCode}] round ${prev}→${next} PRESENTING`)
     const round = room.game.rounds[next]!
     round.status = 'PRESENTING'
     round.startedAt = Date.now()
+    round.advanceAt = undefined
 
     broadcastGameUpdate(io, roomCode)
     io.to(roomCode).emit('round:started', { round })
@@ -292,16 +293,17 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     logger.info(`[room:${roomCode}] round ${targetRound} VOTING (${room.game.settings.votingTimeSeconds}s timer)`)
     broadcastGameUpdate(io, roomCode)
 
+    const votingMs = room.game.settings.votingTimeSeconds * 1000
     const handle = setTimeout(() => {
       const r = roomManager.get(roomCode)
       if (!r || r.game.currentRoundIndex !== targetRound) return
-      const cr = r.game.rounds[r.game.currentRoundIndex]
+      const cr = r.game.rounds[targetRound]
       if (cr?.status === 'VOTING') {
         logger.info(`[room:${roomCode}] round ${targetRound} voting timer expired → auto-reveal`)
         revealRound(io, r.game.code)
       }
-    }, room.game.settings.votingTimeSeconds * 1000)
-    room.setVotingTimer(handle, targetRound)
+    }, votingMs)
+    room.schedulePhase(handle, targetRound, 'VOTING')
 
     cb({})
   })
@@ -386,7 +388,9 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     const round = room.game.rounds[room.game.currentRoundIndex]
     if (!round || round.status !== 'REVEAL') { fail(socket, cb, 'WRONG_STATE', 'Round not in REVEAL state'); return }
 
+    room.clearPhase()  // cancel auto-advance REVEAL dwell if active
     round.status = 'SCOREBOARD'
+    round.advanceAt = undefined
     logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} SCOREBOARD`)
     broadcastGameUpdate(io, roomCode)
     cb({})
@@ -420,7 +424,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
       fail(socket, cb, 'WRONG_STATE', 'Can only end a game that is in progress'); return
     }
 
-    room.clearVotingTimer()
+    room.clearPhase()
     room.game.status = 'FINAL_RESULTS'
     logger.info(`[room:${roomCode}] host ended game early →FINAL_RESULTS`)
     broadcastGameUpdate(io, roomCode)
@@ -436,7 +440,7 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
     if (!room) { fail(socket, cb, 'ROOM_NOT_FOUND', 'Room not found'); return }
     if (room.game.hostId !== playerId) { fail(socket, cb, 'NOT_HOST', 'Only the host can close the room'); return }
 
-    room.clearVotingTimer()
+    room.clearPhase()
     room.cancelHostMigration()
     room.game.status = 'CLOSED'
     logger.info(`[room:${roomCode}] host closed the room`)
@@ -530,17 +534,80 @@ function revealRound(io: AppServer, roomCode: string): void {
   const room = roomManager.get(roomCode)
   if (!room) return
 
-  const round = room.game.rounds[room.game.currentRoundIndex]
+  const roundIndex = room.game.currentRoundIndex
+  const round = room.game.rounds[roundIndex]
   if (!round || round.status === 'REVEAL' || round.status === 'SCOREBOARD') return
 
-  room.clearVotingTimer()
+  room.clearPhase()
   round.status = 'REVEAL'
   const { deltas, breakdown } = computeScoreDeltas(round, room.game.flags, room.game.settings)
-  logger.info(`[room:${roomCode}] round ${room.game.currentRoundIndex} revealed — deltas ${JSON.stringify(deltas)}`)
+  logger.info(`[room:${roomCode}] round ${roundIndex} revealed — deltas ${JSON.stringify(deltas)}`)
   room.applyScoreDeltas(deltas)
+
+  // Auto-advance: schedule REVEAL → SCOREBOARD dwell
+  if (room.game.settings.autoAdvance) {
+    const dwellMs = room.game.settings.autoAdvanceSeconds * 1000
+    round.advanceAt = Date.now() + dwellMs
+    const handle = setTimeout(() => scheduleScoreboard(io, roomCode, roundIndex), dwellMs)
+    room.schedulePhase(handle, roundIndex, 'REVEAL')
+  } else {
+    round.advanceAt = undefined
+  }
 
   broadcastGameUpdate(io, roomCode)
   io.to(roomCode).emit('round:revealed', { round, scoreDeltas: deltas, breakdown })
+}
+
+function scheduleScoreboard(io: AppServer, roomCode: string, roundIndex: number): void {
+  const room = roomManager.get(roomCode)
+  if (!room) return
+  if (room.game.currentRoundIndex !== roundIndex) return     // stale-timer guard
+  const round = room.game.rounds[roundIndex]
+  if (round?.status !== 'REVEAL') return
+
+  round.status = 'SCOREBOARD'
+  logger.info(`[room:${roomCode}] round ${roundIndex} SCOREBOARD (auto-advance)`)
+
+  // Schedule SCOREBOARD → next round dwell
+  if (room.game.settings.autoAdvance) {
+    const dwellMs = room.game.settings.autoAdvanceSeconds * 1000
+    round.advanceAt = Date.now() + dwellMs
+    const handle = setTimeout(() => scheduleNextRound(io, roomCode, roundIndex), dwellMs)
+    room.schedulePhase(handle, roundIndex, 'SCOREBOARD')
+  } else {
+    round.advanceAt = undefined
+  }
+
+  broadcastGameUpdate(io, roomCode)
+}
+
+function scheduleNextRound(io: AppServer, roomCode: string, roundIndex: number): void {
+  const room = roomManager.get(roomCode)
+  if (!room) return
+  if (room.game.currentRoundIndex !== roundIndex) return     // stale-timer guard
+  const round = room.game.rounds[roundIndex]
+  if (round?.status !== 'SCOREBOARD') return
+
+  // Reuse the round:next logic
+  const next = nextRoundIndex(room.game)
+  if (next === null) {
+    room.game.status = 'FINAL_RESULTS'
+    logger.info(`[room:${roomCode}] →FINAL_RESULTS (auto-advance)`)
+    broadcastGameUpdate(io, roomCode)
+    io.to(roomCode).emit('game:ended', { finalScores: { ...room.game.scores } })
+    return
+  }
+
+  room.clearPhase()
+  room.game.currentRoundIndex = next
+  logger.info(`[room:${roomCode}] round ${roundIndex}→${next} PRESENTING (auto-advance)`)
+  const nextRound = room.game.rounds[next]!
+  nextRound.status = 'PRESENTING'
+  nextRound.startedAt = Date.now()
+  nextRound.advanceAt = undefined
+
+  broadcastGameUpdate(io, roomCode)
+  io.to(roomCode).emit('round:started', { round: nextRound })
 }
 
 /**
@@ -566,7 +633,7 @@ function maybeDestroyIfEmpty(roomCode: string): void {
 
   if (players.length === 0) {
     room.cancelHostMigration()
-    room.clearVotingTimer()
+    room.clearPhase()
     roomManager.delete(roomCode)
     logger.info(`Room ${roomCode} destroyed (empty)`)
     return

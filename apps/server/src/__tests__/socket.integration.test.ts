@@ -136,10 +136,10 @@ describe('Socket integration', () => {
   })
 
   afterEach(() => {
-    // Clear any pending voting / host-migration timers and purge rooms between tests
+    // Clear any pending phase / host-migration timers and purge rooms between tests
     for (const code of roomManager.activeCodes()) {
       const room = roomManager.get(code)
-      room?.clearVotingTimer()
+      room?.clearPhase()
       room?.cancelHostMigration()
       roomManager.delete(code)
     }
@@ -522,6 +522,76 @@ describe('Socket integration', () => {
     expect(room.game.status).toBe('SUBMITTING')
 
     host.disconnect()
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  // ── 14. Auto-advance phase timer ───────────────────────────────────────────
+
+  it('auto-advance: REVEAL dwell fires → SCOREBOARD; skip clears the timer', async () => {
+    const { alice, bob, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    // Enable auto-advance with a very short dwell
+    room.game.settings.autoAdvance = true
+    room.game.settings.autoAdvanceSeconds = 0.1  // 100ms
+
+    await ackP(alice, 'round:openVoting', {})
+    await ackP(alice, 'round:reveal', {})
+
+    // Wait for auto-advance dwell to fire → SCOREBOARD
+    const scoreboardUpdate = waitForGameUpdate(alice, (g) => g.rounds[0]?.status === 'SCOREBOARD')
+    const result = await scoreboardUpdate
+    expect(result.rounds[0]!.status).toBe('SCOREBOARD')
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  it('auto-advance: manual skip cancels the pending dwell timer', async () => {
+    const { alice, bob, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    room.game.settings.autoAdvance = true
+    room.game.settings.autoAdvanceSeconds = 10  // long dwell — won't auto-fire
+
+    await ackP(alice, 'round:openVoting', {})
+    await ackP(alice, 'round:reveal', {})
+
+    // Manually advance to scoreboard (skip) — this clears the pending dwell
+    await ackP(alice, 'round:scoreboard', {})
+
+    // Timer should be cleared now (no pending phase)
+    expect(room.activeVotingRound).toBe(-1)
+    expect(room.game.rounds[0]!.status).toBe('SCOREBOARD')
+    expect(room.game.rounds[0]!.advanceAt).toBeUndefined()
+
+    alice.disconnect()
+    bob.disconnect()
+  }, 10_000)
+
+  it('stale auto-advance timer does not fire for a different round', async () => {
+    const { alice, bob, code } = await advanceToPlaying(url)
+    const room = roomManager.get(code)!
+
+    room.game.settings.autoAdvance = true
+    room.game.settings.autoAdvanceSeconds = 0.05  // 50ms
+
+    await ackP(alice, 'round:openVoting', {})
+
+    // Manually reveal and skip to next round BEFORE the auto-advance would fire on round 0
+    await ackP(alice, 'round:reveal', {})
+    // Skip REVEAL → SCOREBOARD manually (clears auto-advance timer for round 0)
+    await ackP(alice, 'round:scoreboard', {})
+
+    // Disable auto-advance before advancing to round 1 so it stays PRESENTING
+    room.game.settings.autoAdvance = false
+    await ackP(alice, 'round:next', {})
+
+    // Wait past the old 50ms dwell — ensure round 1 is still PRESENTING (stale guard holds)
+    await sleep(150)
+    expect(room.game.rounds[1]!.status).toBe('PRESENTING')
+
     alice.disconnect()
     bob.disconnect()
   }, 10_000)
