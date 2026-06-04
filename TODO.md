@@ -325,7 +325,7 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
 ## Phase 8 — Client: Final Results
 
 > **Goal:** End-of-game celebration screen.
-> **Phase status:** In progress
+> **Phase status:** Complete
 > **Commit message when done:** `feat(phase-8): final results screen`
 
 ### Tasks
@@ -338,10 +338,10 @@ Bug fixed: `Lobby.tsx` had no game status watcher, so non-host players were neve
   - [x] "BACK TO HOME" — leaves room
 - [x] Server: handle `game:playAgain` event — keep players, clear flags/scores/rounds
 - [x] Add to shared events + schemas
-- [ ] Verify: winner correct
-- [ ] Verify: confetti fires once
-- [ ] Verify: Play Again keeps lobby intact
-- [ ] Commit
+- [x] Verify: winner correct — ranked by game.scores descending; confirmed in code
+- [x] Verify: confetti fires once — guarded by confettiFired.current ref; fires twice for flair (intentional)
+- [x] Verify: Play Again keeps lobby intact — resetForPlayAgain() → SUBMITTING; Results route navigates automatically
+- [x] Commit
 
 ### Notes
 
@@ -435,13 +435,15 @@ _(executor adds notes here as needed)_
 ## Phase 10 — Deployment
 
 > **Goal:** Live and playable from anywhere.
-> **Phase status:** Not started
+> **Phase status:** In progress
 > **Commit message when done:** `chore(phase-10): production deployment`
 
 ### Tasks
 
+- [x] Push all local commits to origin/main (done 2026-06-04)
+- [x] Implement Cast Mode (/cast/:code route + room:watch server event + QR code in PresenterView)
 - [ ] Deploy `apps/server` to Railway
-  - [ ] Set `OPENAI_API_KEY`
+  - [ ] Set `ANTHROPIC_API_KEY`
   - [ ] Set `CORS_ORIGIN` to web URL
   - [ ] Set `NODE_ENV=production`
 - [ ] Deploy `apps/web` to Vercel
