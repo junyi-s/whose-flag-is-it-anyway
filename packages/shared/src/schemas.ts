@@ -95,6 +95,10 @@ export const RoomRejoinSchema = z.object({
   secret: z.string().min(1).max(128),
 })
 
+export const RoomWatchSchema = z.object({
+  code: RoomCodeSchema,
+})
+
 export const FlagsSubmitSchema = z.object({
   flags: z
     .array(z.string().min(MIN_FLAG_LENGTH).max(MAX_FLAG_LENGTH).trim())

@@ -51,11 +51,23 @@ export interface SpectatorSetPayload {
   spectator: boolean
 }
 
+export interface RoomWatchPayload {
+  code: RoomCode
+}
+
+export interface RoomWatchResponse {
+  ok: boolean
+  game?: GameView
+  error?: string
+}
+
 export interface ClientToServerEvents {
   'room:create': (payload: RoomCreatePayload, cb: (res: RoomCreateResponse) => void) => void
   'room:join': (payload: RoomJoinPayload, cb: (res: RoomJoinResponse) => void) => void
   'room:rejoin': (payload: RoomRejoinPayload, cb: (res: RoomRejoinResponse) => void) => void
   'room:leave': (payload: Record<string, never>, cb: (res: EmptyResponse) => void) => void
+  /** Read-only spectate: join the room's cast channel without creating a player entry. */
+  'room:watch': (payload: RoomWatchPayload, cb: (res: RoomWatchResponse) => void) => void
   /** Toggle your own presenter/spectator status (LOBBY only, before game starts). */
   'spectator:set': (payload: SpectatorSetPayload, cb: (res: EmptyResponse) => void) => void
   'flags:submit': (payload: FlagsSubmitPayload, cb: (res: FlagsSubmitResponse) => void) => void

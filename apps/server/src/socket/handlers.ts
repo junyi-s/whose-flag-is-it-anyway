@@ -8,6 +8,7 @@ import {
   RoomCreateSchema,
   RoomJoinSchema,
   RoomRejoinSchema,
+  RoomWatchSchema,
   SettingsUpdateSchema,
   VoteCastSchema,
   competitors,
@@ -55,6 +56,8 @@ function broadcastGameUpdate(io: AppServer, roomCode: string): void {
   for (const player of Object.values(room.game.players)) {
     io.to(player.id).emit('game:updated', { game: redactGameFor(snapshot, player.id) })
   }
+  // Cast watchers get host's view (no personal redaction needed)
+  io.to(roomCode + ':cast').emit('game:updated', { game: redactGameFor(snapshot, room.game.hostId) })
 }
 
 export function registerHandlers(io: AppServer, socket: AppSocket): void {
@@ -155,6 +158,16 @@ export function registerHandlers(io: AppServer, socket: AppSocket): void {
   socket.on('room:leave', (_payload, cb) => {
     handleLeave(io, socket)
     cb({})
+  })
+
+  // ─── room:watch ───
+  socket.on('room:watch', (payload, cb) => {
+    const result = RoomWatchSchema.safeParse(payload)
+    if (!result.success) { cb({ ok: false, error: 'VALIDATION_ERROR' }); return }
+    const room = roomManager.get(result.data.code)
+    if (!room) { cb({ ok: false, error: 'ROOM_NOT_FOUND' }); return }
+    void socket.join(result.data.code + ':cast')
+    cb({ ok: true, game: redactGameFor(room.snapshot(), room.game.hostId) })
   })
 
   // ─── spectator:set ───

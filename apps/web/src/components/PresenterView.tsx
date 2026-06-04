@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import { QRCodeSVG } from 'qrcode.react'
 import { Button } from './ui/Button'
 import { RedFlagCard } from './RedFlagCard'
 import { Scoreboard } from './Scoreboard'
@@ -28,6 +29,8 @@ export function PresenterView({ game, playerId, lastDeltas, lastBreakdown }: Pre
   const isHost = game.hostId === playerId
   const isLastRound = game.currentRoundIndex === game.rounds.length - 1
   const [advanceCountdown, setAdvanceCountdown] = useState<number | null>(null)
+  const [showQr, setShowQr] = useState(false)
+  const castUrl = `${window.location.origin}/cast/${game.code}`
 
   // Live countdown from round.advanceAt
   useEffect(() => {
@@ -139,9 +142,37 @@ export function PresenterView({ game, playerId, lastDeltas, lastBreakdown }: Pre
                 hasAdvanceTimer={advanceCountdown !== null}
               />
             </div>
+            <button
+              onClick={() => setShowQr((v) => !v)}
+              className="shrink-0 text-white/40 hover:text-white transition-colors text-xl leading-none"
+              title="Cast screen QR code"
+              aria-label="Toggle cast QR code"
+            >
+              📺
+            </button>
           </div>
         </div>
       )}
+
+      {/* QR overlay — cast URL */}
+      <AnimatePresence>
+        {showQr && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-6 p-8"
+            onClick={() => setShowQr(false)}
+          >
+            <p className="text-white font-black text-xl">Cast Screen</p>
+            <div className="bg-white p-4 rounded-2xl">
+              <QRCodeSVG value={castUrl} size={200} />
+            </div>
+            <p className="text-white/50 text-sm font-mono break-all text-center max-w-xs">{castUrl}</p>
+            <p className="text-white/30 text-xs">Tap anywhere to close</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

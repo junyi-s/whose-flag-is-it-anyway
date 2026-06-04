@@ -6,6 +6,7 @@ import { Lobby } from './routes/Lobby'
 import { SubmitFlags } from './routes/SubmitFlags'
 import { Game } from './routes/Game'
 import { Results } from './routes/Results'
+import { Cast } from './routes/Cast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useGameSocket } from './hooks/useGameSocket'
 import { usePersistedIdentity } from './hooks/usePersistedIdentity'
@@ -105,7 +106,10 @@ function AppInner() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AppInner />
+      <Routes>
+        <Route path="/cast/:code" element={<ErrorBoundary><Cast /></ErrorBoundary>} />
+        <Route path="*" element={<AppInner />} />
+      </Routes>
     </BrowserRouter>
   )
 }
