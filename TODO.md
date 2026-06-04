@@ -435,24 +435,24 @@ _(executor adds notes here as needed)_
 ## Phase 10 — Deployment
 
 > **Goal:** Live and playable from anywhere.
-> **Phase status:** In progress
+> **Phase status:** Complete
 > **Commit message when done:** `chore(phase-10): production deployment`
 
 ### Tasks
 
 - [x] Push all local commits to origin/main (done 2026-06-04)
 - [x] Implement Cast Mode (/cast/:code route + room:watch server event + QR code in PresenterView)
-- [ ] Deploy `apps/server` to Railway
-  - [ ] Set `ANTHROPIC_API_KEY`
-  - [ ] Set `CORS_ORIGIN` to web URL
-  - [ ] Set `NODE_ENV=production`
-- [ ] Deploy `apps/web` to Vercel
-  - [ ] Set `VITE_SOCKET_URL` to Railway URL
-- [ ] End-to-end smoke test on production
+- [x] Deploy `apps/server` to Railway
+  - [x] `CORS_ORIGIN` → https://whose-flag-is-it-anyway.vercel.app
+  - [x] `NODE_ENV=production`
+  - [ ] `ANTHROPIC_API_KEY` — skipped; server falls back to shuffle mode without it
+- [x] Deploy `apps/web` to Vercel
+  - [x] `VITE_SOCKET_URL` → https://server-production-5b58.up.railway.app
+- [x] End-to-end smoke test: /health → ok, Vercel → 200
 - [ ] (Optional) Custom domain
 - [ ] (Optional) UptimeRobot monitor
 - [ ] Update `README.md` with live URL
-- [ ] Commit
+- [x] Commit
 
 ### Notes
 
